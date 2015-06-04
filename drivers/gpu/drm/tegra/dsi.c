@@ -1414,6 +1414,7 @@ static int tegra_dsi_host_attach(struct mipi_dsi_host *host,
 			drm_helper_hpd_irq_event(output->connector.dev);
 		}
 	}
+	tegra_dsi_encoder_disable(&dsi->output.encoder);
 
 	return 0;
 }
