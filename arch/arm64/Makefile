@@ -118,6 +118,9 @@ Image.%: Image
 zinstall install:
 	$(Q)$(MAKE) $(build)=$(boot) $@
 
+Image.fit: Image
+	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@
+
 %.dtb: scripts
 	$(Q)$(MAKE) $(build)=$(boot)/dts $(boot)/dts/$@
 
