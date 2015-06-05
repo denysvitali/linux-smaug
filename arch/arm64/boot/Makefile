@@ -16,6 +16,10 @@
 
 OBJCOPYFLAGS_Image :=-O binary -R .note -R .note.gnu.build-id -R .comment -S
 
+DTB_OBJS = \
+	$(obj)/dts/nvidia/tegra210-smaug-p0.dtb \
+	$(obj)/dts/nvidia/tegra210-smaug-p1.dtb
+
 targets := Image Image.gz Image.fit
 
 $(obj)/Image: vmlinux FORCE
