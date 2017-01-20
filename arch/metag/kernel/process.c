@@ -27,6 +27,7 @@
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
 #include <linux/smp.h>
+#include <linux/system-power.h>
 #include <asm/core_reg.h>
 #include <asm/user_gateway.h>
 #include <asm/tcm.h>
@@ -94,8 +95,7 @@ void machine_halt(void)
 
 void machine_power_off(void)
 {
-	if (pm_power_off)
-		pm_power_off();
+	system_power_off();
 	smp_send_stop();
 	hard_processor_halt(HALT_OK);
 }
