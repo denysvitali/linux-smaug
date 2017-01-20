@@ -10,8 +10,8 @@
 #include <linux/export.h>
 #include <linux/pm.h>
 #include <linux/types.h>
-#include <linux/reboot.h>
 #include <linux/delay.h>
+#include <linux/system-power.h>
 
 #include <asm/reboot.h>
 
@@ -35,7 +35,7 @@ void machine_restart(char *command)
 	preempt_disable();
 	smp_send_stop();
 #endif
-	do_kernel_restart(command);
+	system_restart(command);
 	mdelay(1000);
 	pr_emerg("Reboot failed -- System halted\n");
 	local_irq_disable();
@@ -57,8 +57,7 @@ void machine_halt(void)
 
 void machine_power_off(void)
 {
-	if (pm_power_off)
-		pm_power_off();
+	system_power_off();
 
 #ifdef CONFIG_SMP
 	preempt_disable();
