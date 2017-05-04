@@ -279,7 +279,7 @@
 		};
 
 		dpaux: dpaux@545c0000 {
-			compatible = "nvidia,tegra124-dpaux";
+			compatible = "nvidia,tegra210-dpaux";
 			reg = <0x0 0x545c0000 0x0 0x00040000>;
 			interrupts = <GIC_SPI 159 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&tegra_car TEGRA210_CLK_DPAUX>,
@@ -288,7 +288,7 @@
 			resets = <&tegra_car 181>;
 			reset-names = "dpaux";
 			power-domains = <&pd_sor>;
-			status = "disabled";
+			status = "okay";
 
 			state_dpaux_aux: pinmux-aux {
 				groups = "dpaux-io";
@@ -642,7 +642,7 @@
 		pinctrl-0 = <&state_dpaux_i2c>;
 		pinctrl-1 = <&state_dpaux_off>;
 		pinctrl-names = "default", "idle";
-		status = "disabled";
+		status = "okay";
 	};
 
 	spi@7000d400 {

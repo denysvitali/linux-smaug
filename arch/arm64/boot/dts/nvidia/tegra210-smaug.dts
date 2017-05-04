@@ -25,11 +25,69 @@
 
 	memory {
 		device_type = "memory";
-		reg = <0x0 0x80000000 0x0 0xc0000000>;
+		/* TODO: replace */
+		reg = < 0x0 0x80000000 0x0 0x7d200000 >,
+		      < 0x1 0x00000000 0x0 0x40000000 >;
 	};
 
 	host1x@50000000 {
-		dpaux: dpaux@545c0000 {
+		dpaux@0,54040000 {
+			status = "okay";
+
+			vdd-supply = <&pp3300>;
+		};
+
+		dsia: dsi@54300000 {
+			status = "okay";
+			avdd-dsi-csi-supply = <&pp1200_avdd>;
+                        nvidia,mipi-calibrate = <&mipi 0x0c0>; /* DSIA & DSIB pads */
+			#address-cells = <2>;
+			#size-cells = <2>;
+
+			secondary_panel: panel@0 {
+				compatible = "jdi,lpm102a188a";
+				reg = <0 0 0 0>;
+			};
+		};
+
+		dsib: dsi@54400000 {
+			status = "okay";
+			avdd-dsi-csi-supply = <&pp1200_avdd>;
+                        nvidia,mipi-calibrate = <&mipi 0x300>; /* DSIC & DSID pads */
+			nvidia,ganged-mode = <&dsia>;
+			#address-cells = <2>;
+			#size-cells = <2>;
+
+			backlight_panel: panel@0 {
+				compatible = "jdi,lpm102a188a";
+				reg = <0 0 0 0>;
+				power-supply = <&pplcd_vdd>;
+				ddi-supply = <&pp1800_lcdio>;
+				enable-gpio = <&gpio TEGRA_GPIO(V, 1) GPIO_ACTIVE_HIGH>;
+				reset-gpio = <&gpio TEGRA_GPIO(V, 2) GPIO_ACTIVE_LOW>;
+				ts-reset-gpio = <&gpio TEGRA_GPIO(V, 6) GPIO_ACTIVE_LOW>;
+				backlight = <&backlight>;
+				slave = <&secondary_panel>;
+				panel-boot-on;
+			};
+		};
+
+		sor@0,54580000 {
+			status = "okay";
+
+			nvidia,dpaux = <&dpaux1>;
+
+			avdd-io-hdmi-dp-supply = <&pp1800>;
+			vdd-hdmi-dp-pll-supply = <&avddio_1v05>;
+			vddio-dp-supply = <&pp1800>;
+			vdd18-dp-supply = <&pp1800>;
+		};
+
+		dpaux@0,545c0000 {
+			status = "okay";
+		};
+
+		i2c@0,546c0000 {
 			status = "okay";
 		};
 	};
@@ -1591,6 +1649,11 @@
 			status = "okay";
 		};
 
+		backlight: jdi-lpm102a188a@2c {
+			compatible = "jdi,lpm102a188a-bl";
+			reg = <0x2c>;
+		};
+        
 		audio-codec@2d {
 			compatible = "realtek,rt5677";
 			reg = <0x2d>;
