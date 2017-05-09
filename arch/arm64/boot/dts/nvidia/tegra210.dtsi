@@ -362,7 +362,7 @@
 
 		iommus = <&mc TEGRA_SWGROUP_GPU>;
 
-		status = "disabled";
+		status = "okay";
 	};
 
 	lic: interrupt-controller@60004000 {

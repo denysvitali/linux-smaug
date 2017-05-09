@@ -2,6 +2,7 @@
 
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/mfd/max77620.h>
+#include <dt-bindings/regulator/max8973.h>
 #include <dt-bindings/pinctrl/pinctrl-tegra.h>
 
 #include "tegra210.dtsi"
@@ -65,10 +66,7 @@
 				ddi-supply = <&pp1800_lcdio>;
 				enable-gpio = <&gpio TEGRA_GPIO(V, 1) GPIO_ACTIVE_HIGH>;
 				reset-gpio = <&gpio TEGRA_GPIO(V, 2) GPIO_ACTIVE_LOW>;
-				ts-reset-gpio = <&gpio TEGRA_GPIO(V, 6) GPIO_ACTIVE_LOW>;
-				backlight = <&backlight>;
 				slave = <&secondary_panel>;
-				panel-boot-on;
 			};
 		};
 
@@ -88,6 +86,22 @@
 		};
 
 		i2c@0,546c0000 {
+			status = "okay";
+		};
+		
+	};
+
+	gpu@57000000 { 
+		status = "okay"; 
+		vdd-supply = <&max77621_gpu>; 
+
+		gpu_scaling_cdev: gpu-scaling-cdev {
+			status = "okay";
+		};
+		gpu_throttle_cdev: gpu-throttle-cdev {
+			status = "okay";
+		};
+		gpu_edp_cdev: gpu-edp-cdev {
 			status = "okay";
 		};
 	};
@@ -1365,6 +1379,20 @@
 	serial@70006000 {
 		status = "okay";
 	};
+	
+    i2c@7000c000 {
+        status = "okay";
+        clock-frequency = <1000000>;
+        touchscreen: i2c-hid-dev@20 {
+            compatible = "hid-over-i2c";
+            reg = <0x20>;
+            status = "okay";
+            hid-descr-addr = <0x0020>;
+            interrupt-parent = <&gpio>;
+            interrupts = <TEGRA_GPIO(X, 1) IRQ_TYPE_EDGE_FALLING>;
+        };
+	};
+	
 
 	i2c@7000c400 {
 		status = "okay";
@@ -1619,6 +1647,51 @@
 				};
 			};
 		};
+
+        max77621_cpu: pmic@1b {
+            compatible = "maxim,max77621";
+            reg = <0x1b>;
+            interrupt-parent = <&gpio>;
+            interrupts = <TEGRA_GPIO(Y, 1) IRQ_TYPE_LEVEL_LOW>;
+            regulator-name = "PPVAR_CPU";
+            regulator-min-microvolt = <800000>;
+            regulator-max-microvolt = <1231250>;
+            regulator-ramp-delay = <12500>;
+            maxim,externally-enable;
+            maxim,enable-gpio = <&max77620 5 0>;
+            maxim,dvs-default-state = <1>;
+            regulator-always-on;
+            maxim,enable-active-discharge;
+            maxim,enable-bias-control;
+            maxim,enable-etr;
+            maxim,watchdog-timer-enable;
+            maxim,pull-down-enable;
+            maxim,inductor-value = <MAX8973_INDUCTOR_VAL_PLUS_30_PER>;
+
+            #thermal-sensor-cells = <0>;
+        };
+
+        max77621_gpu: pmic@1c {
+            compatible = "maxim,max77621";
+            reg = <0x1c>;
+            interrupt-parent = <&gpio>;
+            interrupts = <TEGRA_GPIO(A, 6) IRQ_TYPE_LEVEL_LOW>;
+            regulator-name = "PPVAR_GPU";
+            regulator-min-microvolt = <840000>;
+            regulator-max-microvolt = <1150000>;
+            regulator-ramp-delay = <12500>;
+            maxim,externally-enable;
+            maxim,enable-gpio = <&max77620 6 0>;
+            maxim,dvs-default-state = <1>;
+            maxim,disable-etr;
+            maxim,enable-active-discharge;
+            maxim,enable-bias-control;
+            maxim,pull-down-enable;
+            maxim,watchdog-timer-enable;
+            maxim,inductor-value = <MAX8973_INDUCTOR_VAL_PLUS_30_PER>;
+
+            #thermal-sensor-cells = <0>;
+        };
 	};
 
 	i2c@7000d100 {
