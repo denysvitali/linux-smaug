@@ -4,6 +4,9 @@
 #include <dt-bindings/mfd/max77620.h>
 #include <dt-bindings/regulator/max8973.h>
 #include <dt-bindings/pinctrl/pinctrl-tegra.h>
+#include <dt-bindings/soc/tegra-pmc.h>
+#include <dt-bindings/thermal/thermal.h>
+#include <dt-bindings/thermal/tegra210-trips.h>
 
 #include "tegra210.dtsi"
 
@@ -32,11 +35,6 @@
 	};
 
 	host1x@50000000 {
-		dpaux@0,54040000 {
-			status = "okay";
-
-			vdd-supply = <&pp3300>;
-		};
 
 		dsia: dsi@54300000 {
 			status = "okay";
@@ -88,23 +86,25 @@
 		i2c@0,546c0000 {
 			status = "okay";
 		};
-		
+
 	};
 
-	gpu@57000000 { 
-		status = "okay"; 
-		vdd-supply = <&max77621_gpu>; 
-
-		gpu_scaling_cdev: gpu-scaling-cdev {
-			status = "okay";
-		};
-		gpu_throttle_cdev: gpu-throttle-cdev {
-			status = "okay";
-		};
-		gpu_edp_cdev: gpu-edp-cdev {
-			status = "okay";
-		};
+	gpu@57000000 {
+		status = "okay";
+		vdd-supply = <&max77621_gpu>;
 	};
+
+	dvfs {
+		compatible = "nvidia,tegra210-dvfs";
+		vdd-cpu-supply = <&max77621_cpu>;
+		vdd-core-supply = <&ppvar_soc>;
+	};
+	wifi_bcm4354 {
+		compatible = "bcm,bcm4354";
+		wl_reg_on = <&gpio TEGRA_GPIO(H, 1) GPIO_ACTIVE_HIGH>;
+		wl_host_wake = <&gpio TEGRA_GPIO(H, 2) IRQ_TYPE_LEVEL_HIGH>;
+	};
+
 
 	pinmux: pinmux@700008d4 {
 		pinctrl-names = "boot";
@@ -1379,7 +1379,7 @@
 	serial@70006000 {
 		status = "okay";
 	};
-	
+
     i2c@7000c000 {
         status = "okay";
         clock-frequency = <1000000>;
@@ -1392,34 +1392,36 @@
             interrupts = <TEGRA_GPIO(X, 1) IRQ_TYPE_EDGE_FALLING>;
         };
 	};
-	
+
 
 	i2c@7000c400 {
 		status = "okay";
-		clock-frequency = <1000000>;
-
 		ec@1e {
 			compatible = "google,cros-ec-i2c";
 			reg = <0x1e>;
 			interrupt-parent = <&gpio>;
 			interrupts = <TEGRA_GPIO(Z, 1) IRQ_TYPE_LEVEL_LOW>;
 			wakeup-source;
-
 			ec_i2c_0: i2c-tunnel {
 				compatible = "google,cros-ec-i2c-tunnel";
 				#address-cells = <1>;
 				#size-cells = <0>;
-
 				google,remote-bus = <0>;
-
 				battery: bq27742@55 {
 					compatible = "ti,bq27742";
 					reg = <0x55>;
 					battery-name = "battery";
 				};
 			};
+			usbc_extcon: extcon {
+				compatible = "google,extcon-cros-ec";
+				#extcon-cells = <0>;
+			};
+			pdupdate {
+				compatible = "google,cros-ec-pd-update";
+			};
 		};
-	};
+};
 
 	i2c@7000d000 {
 		status = "okay";
@@ -1751,17 +1753,30 @@
                 rom-val = /bits/ 8 <0xbf>;
             };
         };
-        
-		audio-codec@2d {
-			compatible = "realtek,rt5677";
-			reg = <0x2d>;
-			interrupt-parent = <&gpio>;
-			interrupts = <TEGRA_GPIO(X, 0) IRQ_TYPE_LEVEL_HIGH>;
-			realtek,reset-gpio = <&gpio TEGRA_GPIO(BB, 3) GPIO_ACTIVE_LOW>;
-			gpio-controller;
-			#gpio-cells = <2>;
-			status = "okay";
-		};
+
+			audio-codec@2d {
+				compatible = "realtek,rt5677";
+				reg = <0x2d>;
+				interrupts-extended = <&gpio TEGRA_GPIO(X, 3) IRQ_TYPE_EDGE_BOTH>;
+				gpio-controller;
+				#gpio-cells = <2>;
+				// TODO: Add more?
+				// See: Documentation/devicetree/bindings/sound/rt5677.txt
+				status = "disabled";
+			};
+			audio-jack@3b {
+				// TODO: Describe TI TS3A227E
+				reg = <0x3b>;
+				status = "disabled";
+			};
+			tmp451: temperature-sensor@4c {
+				compatible = "ti,tmp451";
+				reg = <0x4c>;
+				interrupt-parent = <&gpio>;
+				interrupts = <TEGRA_GPIO(X, 4) IRQ_TYPE_LEVEL_LOW>;
+				vcc-supply = <&pp1800>;
+				#thermal-sensor-cells = <1>;
+			};
 	};
 
 	pmc@7000e400 {
@@ -1923,7 +1938,7 @@
 		};
 	};
 
-	max98357a {
+	speaker: max98357a {
 		compatible = "maxim,max98357a";
 		status = "okay";
 	};
@@ -2016,5 +2031,21 @@
 			regulator-min-microvolt = <5000000>;
 			regulator-max-microvolt = <5000000>;
 		};
+	};
+
+	cpu_edp: cpu-edp {
+		nvidia,edp-limit = <16000>;
+	};
+	gpu_edp: gpu-edp {
+		nvidia,edp-limit = <16000>;
+	};
+
+	tlk {
+		compatible = "nvidia,trusted-little-kernel";
+		logger = "enabled";
+		storage = "enabled";
+	};
+	ion-tegra {
+		compatible = "nvidia,tegra210-ion-heaps";
 	};
 };
