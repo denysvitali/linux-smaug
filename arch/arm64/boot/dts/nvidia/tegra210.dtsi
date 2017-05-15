@@ -193,8 +193,6 @@
 			resets = <&tegra_car 178>;
 			reset-names = "vic";
 
-			status = "disabled";
-
 			iommus = <&mc TEGRA_SWGROUP_VIC>;
 			power-domains = <&pd_vic>;
 		};

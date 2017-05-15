@@ -263,7 +263,7 @@ static const struct vic_config vic_t124_config = {
 };
 
 static const struct vic_config vic_t210_config = {
-	.firmware = "nvidia/tegra210/vic.bin",
+	.firmware = "nvidia/tegra210/vic04_ucode.bin",
 };
 
 static const struct of_device_id vic_match[] = {
