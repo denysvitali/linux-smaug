@@ -4,7 +4,6 @@
 #include <dt-bindings/mfd/max77620.h>
 #include <dt-bindings/regulator/max8973.h>
 #include <dt-bindings/pinctrl/pinctrl-tegra.h>
-#include <dt-bindings/pinctrl/pinctrl-tegra-xusb.h>
 #include <dt-bindings/soc/tegra-pmc.h>
 #include <dt-bindings/thermal/thermal.h>
 #include <dt-bindings/thermal/tegra210-trips.h>
@@ -36,17 +35,20 @@
 	};
 
 	host1x@50000000 {
+
 		dsia: dsi@54300000 {
 			status = "okay";
 			avdd-dsi-csi-supply = <&pp1200_avdd>;
                         nvidia,mipi-calibrate = <&mipi 0x0c0>; /* DSIA & DSIB pads */
 			#address-cells = <2>;
 			#size-cells = <2>;
+
 			secondary_panel: panel@0 {
 				compatible = "jdi,lpm102a188a";
 				reg = <0 0 0 0>;
 			};
 		};
+
 		dsib: dsi@54400000 {
 			status = "okay";
 			avdd-dsi-csi-supply = <&pp1200_avdd>;
@@ -54,7 +56,8 @@
 			nvidia,ganged-mode = <&dsia>;
 			#address-cells = <2>;
 			#size-cells = <2>;
-			panel@0 {
+
+			backlight_panel: panel@0 {
 				compatible = "jdi,lpm102a188a";
 				reg = <0 0 0 0>;
 				power-supply = <&pplcd_vdd>;
@@ -64,19 +67,26 @@
 				slave = <&secondary_panel>;
 			};
 		};
-	};
 
-	gic: interrupt-controller@50041000 {
-			compatible = "arm,gic-400";
-			#interrupt-cells = <3>;
-			interrupt-controller;
-			reg = <0x0 0x50041000 0x0 0x1000>,
-			      <0x0 0x50042000 0x0 0x2000>,
-			      <0x0 0x50044000 0x0 0x2000>,
-			      <0x0 0x50046000 0x0 0x2000>;
-			interrupts = <GIC_PPI 9
-				(GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_HIGH)>;
-			interrupt-parent = <&gic>;
+		sor@0,54580000 {
+			status = "okay";
+
+			nvidia,dpaux = <&dpaux1>;
+
+			avdd-io-hdmi-dp-supply = <&pp1800>;
+			vdd-hdmi-dp-pll-supply = <&avddio_1v05>;
+			vddio-dp-supply = <&pp1800>;
+			vdd18-dp-supply = <&pp1800>;
+		};
+
+		dpaux@0,545c0000 {
+			status = "okay";
+		};
+
+		i2c@0,546c0000 {
+			status = "okay";
+		};
+
 	};
 
 	gpu@57000000 {
@@ -1782,16 +1792,17 @@
 	};
 
 	usb@70090000 {
-		phys = <&padctl TEGRA_XUSB_PADCTL_UTMI_P0>,
-		       <&padctl TEGRA_XUSB_PADCTL_USB3_P0>;
-		phy-names = "utmi-0", "usb3-0";
+		phys = <&{/padctl@7009f000/pads/usb2/lanes/usb2-0}>,
+		       <&{/padctl@7009f000/pads/pcie/lanes/pcie-6}>;
+		phy-names = "usb2-0", "usb3-0";
+
 		dvddio-pex-supply = <&avddio_1v05>;
 		hvddio-pex-supply = <&pp1800>;
 		avdd-usb-supply = <&pp3300>;
-		avdd-pll-utmip-supply = <&pp1050_avdd>;
+		avdd-pll-utmip-supply = <&pp1800>;
 		avdd-pll-uerefe-supply = <&pp1050_avdd>;
-		dvdd-usb-ss-pll-supply = <&avddio_1v05>;
-		hvdd-usb-ss-pll-e-supply = <&pp1800>;
+		dvdd-pex-pll-supply = <&avddio_1v05>;
+		hvdd-pex-pll-e-supply = <&pp1800>;
 
 		status = "okay";
 	};
