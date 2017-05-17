@@ -9,6 +9,7 @@
 #include <dt-bindings/thermal/tegra210-trips.h>
 
 #include "tegra210.dtsi"
+#include "tegra210-smaug-sysedp.dtsi"
 
 / {
 	model = "Google Pixel C";
@@ -21,7 +22,7 @@
 	aliases {
 		serial0 = &uarta;
 	};
-
+	
 	chosen {
 		bootargs = "earlycon";
 		stdout-path = "serial0:115200n8";
@@ -99,7 +100,7 @@
 		vdd-cpu-supply = <&max77621_cpu>;
 		vdd-core-supply = <&ppvar_soc>;
 	};
-	wifi_bcm4354 {
+	wifi: wifi_bcm4354 {
 		compatible = "bcm,bcm4354";
 		wl_reg_on = <&gpio TEGRA_GPIO(H, 1) GPIO_ACTIVE_HIGH>;
 		wl_host_wake = <&gpio TEGRA_GPIO(H, 2) IRQ_TYPE_LEVEL_HIGH>;
