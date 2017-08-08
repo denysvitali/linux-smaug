@@ -956,6 +956,36 @@ int mipi_dsi_dcs_set_page_address(struct mipi_dsi_device *dsi, u16 start,
 }
 EXPORT_SYMBOL(mipi_dsi_dcs_set_page_address);
 
+int mipi_dsi_dcs_set_address_mode(struct mipi_dsi_device *dsi,
+			bool reverse_page_address,
+			bool reverse_col_address,
+			bool reverse_page_col_address,
+			bool refresh_from_bottom,
+			bool reverse_rgb,
+			bool latch_right_to_left,
+			bool flip_horizontal,
+			bool flip_vertical)
+{
+	ssize_t err;
+	u8 data;
+
+	data = (flip_vertical ? 1 << 0 : 0) |
+		(flip_horizontal ? 1 << 1 : 0) |
+		(latch_right_to_left ? 1 << 2 : 0) |
+		(reverse_rgb ? 1 << 3 : 0) |
+		(refresh_from_bottom ? 1 << 4 : 0) |
+		(reverse_page_col_address ? 1 << 5 : 0) |
+		(reverse_col_address ? 1 << 6 : 0) |
+		(reverse_page_address ? 1 << 7 : 0);
+
+	err = mipi_dsi_dcs_write(dsi, MIPI_DCS_SET_ADDRESS_MODE, &data, 1);
+	if (err < 0)
+		return err;
+
+	return 0;
+}
+EXPORT_SYMBOL(mipi_dsi_dcs_set_address_mode);
+
 /**
  * mipi_dsi_dcs_set_tear_off() - turn off the display module's Tearing Effect
  *    output signal on the TE signal line
