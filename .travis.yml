@@ -5,7 +5,7 @@ before_install:
 - docker pull dvitali/android-build-tools
 - docker run -v kernel:/kernel --name build dvitali/android-build-tools:latest
 - docker ps -a
-- docker run dvitali/android-build-tools:latest -v kernel:/kernel /bin/sh -c 'cd /kernel/; git clone https://github.com/denysvitali/linux-smaug;
+- docker run -v kernel:/kernel -it dvitali/android-build-tools:latest /bin/sh -c 'cd /kernel/; git clone https://github.com/denysvitali/linux-smaug;
   cd /kernel/linux-smaug/; make -j8'
 script:
 - sudo ls -la /var/lib/docker/volumes/kernel/_data
