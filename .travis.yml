@@ -3,7 +3,7 @@ services:
 - docker
 before_install:
 - docker pull dvitali/android-build-tools
-- docker run -v kernel:/kernel --name build -it dvitali/android-build-tools:latest
+- docker run -v kernel:/kernel --name build dvitali/android-build-tools:latest
 - docker ps -a
 - ls -la /var/lib/docker/volumes/kernel/_data
 - docker run build /bin/sh -c 'cd /kernel/; git clone https://github.com/denysvitali/linux-smaug;
