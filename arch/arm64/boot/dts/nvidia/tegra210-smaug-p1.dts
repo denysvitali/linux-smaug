@@ -1,0 +1,32 @@
+/dts-v1/;
+#include "tegra210-smaug.dtsi"
+/ {
+	model = "Google Tegra210 Smaug Rev 1,3+";
+	compatible = "google,smaug-rev8", "google,smaug-rev7",
+		     "google,smaug-rev6", "google,smaug-rev5",
+		     "google,smaug-rev4", "google,smaug-rev3",
+		     "google,smaug-rev1", "google,smaug", "nvidia,tegra210";
+};
+&bmon_calc {
+	imax-mode;
+};
+&qspi6 {
+	spiflash@1 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "w25q128fw";
+		reg = <0>;
+		spi-max-frequency = <24000000>;
+		partition@0 {
+			label = "Bootloader";
+			reg = <0x00000000 0x01000000>;
+		};
+		controller-data {
+			nvidia,x1-len-limit = <16>;
+			nvidia,x1-bus-speed = <24000000>;
+			nvidia,x1-dummy-cycle = <0>;
+			nvidia,x4-bus-speed = <24000000>;
+			nvidia,x4-dummy-cycle = <8>;
+		};
+	};
+};

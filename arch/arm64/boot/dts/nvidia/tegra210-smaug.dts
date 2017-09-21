@@ -2,17 +2,22 @@
 
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/mfd/max77620.h>
+#include <dt-bindings/regulator/max8973.h>
 #include <dt-bindings/pinctrl/pinctrl-tegra.h>
+#include <dt-bindings/soc/tegra-pmc.h>
+#include <dt-bindings/thermal/thermal.h>
+#include <dt-bindings/thermal/tegra210-trips.h>
 
 #include "tegra210.dtsi"
+#include "tegra210-smaug-sysedp.dtsi"
 
 / {
 	model = "Google Pixel C";
 	compatible = "google,smaug-rev8", "google,smaug-rev7",
-		     "google,smaug-rev6", "google,smaug-rev5",
-		     "google,smaug-rev4", "google,smaug-rev3",
-		     "google,smaug-rev2", "google,smaug-rev1",
-		     "google,smaug", "nvidia,tegra210";
+				 "google,smaug-rev6", "google,smaug-rev5",
+				 "google,smaug-rev4", "google,smaug-rev3",
+				 "google,smaug-rev2", "google,smaug-rev1",
+				 "google,smaug", "nvidia,tegra210";
 
 	aliases {
 		serial0 = &uarta;
@@ -25,14 +30,82 @@
 
 	memory {
 		device_type = "memory";
-		reg = <0x0 0x80000000 0x0 0xc0000000>;
+		/* TODO: replace */
+		reg = < 0x0 0x80000000 0x0 0x7d200000 >,
+					< 0x1 0x00000000 0x0 0x40000000 >;
 	};
 
 	host1x@50000000 {
-		dpaux: dpaux@545c0000 {
+
+		dsia: dsi@54300000 {
+			status = "okay";
+			avdd-dsi-csi-supply = <&pp1200_avdd>;
+												nvidia,mipi-calibrate = <&mipi 0x0c0>; /* DSIA & DSIB pads */
+			#address-cells = <2>;
+			#size-cells = <2>;
+
+			secondary_panel: panel@0 {
+				compatible = "jdi,lpm102a188a";
+				reg = <0 0 0 0>;
+			};
+		};
+
+		dsib: dsi@54400000 {
+			status = "okay";
+			avdd-dsi-csi-supply = <&pp1200_avdd>;
+												nvidia,mipi-calibrate = <&mipi 0x300>; /* DSIC & DSID pads */
+			nvidia,ganged-mode = <&dsia>;
+			#address-cells = <2>;
+			#size-cells = <2>;
+
+			backlight_panel: panel@0 {
+				compatible = "jdi,lpm102a188a";
+				reg = <0 0 0 0>;
+				power-supply = <&pplcd_vdd>;
+				ddi-supply = <&pp1800_lcdio>;
+				enable-gpio = <&gpio TEGRA_GPIO(V, 1) GPIO_ACTIVE_HIGH>;
+				reset-gpio = <&gpio TEGRA_GPIO(V, 2) GPIO_ACTIVE_LOW>;
+				slave = <&secondary_panel>;
+			};
+		};
+
+		sor@0,54580000 {
+			status = "okay";
+
+			nvidia,dpaux = <&dpaux1>;
+
+			avdd-io-hdmi-dp-supply = <&pp1800>;
+			vdd-hdmi-dp-pll-supply = <&avddio_1v05>;
+			vddio-dp-supply = <&pp1800>;
+			vdd18-dp-supply = <&pp1800>;
+		};
+
+		dpaux@0,545c0000 {
 			status = "okay";
 		};
+
+		i2c@0,546c0000 {
+			status = "okay";
+		};
+
 	};
+
+	gpu@57000000 {
+		status = "okay";
+		vdd-supply = <&max77621_gpu>;
+	};
+
+	dvfs {
+		compatible = "nvidia,tegra210-dvfs";
+		vdd-cpu-supply = <&max77621_cpu>;
+		vdd-core-supply = <&ppvar_soc>;
+	};
+	wifi: wifi_bcm4354 {
+		compatible = "bcm,bcm4354";
+		wl_reg_on = <&gpio TEGRA_GPIO(H, 1) GPIO_ACTIVE_HIGH>;
+		wl_host_wake = <&gpio TEGRA_GPIO(H, 2) IRQ_TYPE_LEVEL_HIGH>;
+	};
+
 
 	pinmux: pinmux@700008d4 {
 		pinctrl-names = "boot";
@@ -1308,32 +1381,48 @@
 		status = "okay";
 	};
 
+		i2c@7000c000 {
+				status = "okay";
+				clock-frequency = <1000000>;
+				touchscreen: i2c-hid-dev@20 {
+						compatible = "hid-over-i2c";
+						reg = <0x20>;
+						status = "okay";
+						hid-descr-addr = <0x0020>;
+						interrupt-parent = <&gpio>;
+						interrupts = <TEGRA_GPIO(X, 1) IRQ_TYPE_EDGE_FALLING>;
+				};
+	};
+
+
 	i2c@7000c400 {
 		status = "okay";
-		clock-frequency = <1000000>;
-
 		ec@1e {
 			compatible = "google,cros-ec-i2c";
 			reg = <0x1e>;
 			interrupt-parent = <&gpio>;
 			interrupts = <TEGRA_GPIO(Z, 1) IRQ_TYPE_LEVEL_LOW>;
 			wakeup-source;
-
 			ec_i2c_0: i2c-tunnel {
 				compatible = "google,cros-ec-i2c-tunnel";
 				#address-cells = <1>;
 				#size-cells = <0>;
-
 				google,remote-bus = <0>;
-
 				battery: bq27742@55 {
 					compatible = "ti,bq27742";
 					reg = <0x55>;
 					battery-name = "battery";
 				};
 			};
+			usbc_extcon: extcon {
+				compatible = "google,extcon-cros-ec";
+				#extcon-cells = <0>;
+			};
+			pdupdate {
+				compatible = "google,cros-ec-pd-update";
+			};
 		};
-	};
+};
 
 	i2c@7000d000 {
 		status = "okay";
@@ -1561,6 +1650,51 @@
 				};
 			};
 		};
+
+				max77621_cpu: pmic@1b {
+						compatible = "maxim,max77621";
+						reg = <0x1b>;
+						interrupt-parent = <&gpio>;
+						interrupts = <TEGRA_GPIO(Y, 1) IRQ_TYPE_LEVEL_LOW>;
+						regulator-name = "PPVAR_CPU";
+						regulator-min-microvolt = <800000>;
+						regulator-max-microvolt = <1231250>;
+						regulator-ramp-delay = <12500>;
+						maxim,externally-enable;
+						maxim,enable-gpio = <&max77620 5 0>;
+						maxim,dvs-default-state = <1>;
+						regulator-always-on;
+						maxim,enable-active-discharge;
+						maxim,enable-bias-control;
+						maxim,enable-etr;
+						maxim,watchdog-timer-enable;
+						maxim,pull-down-enable;
+						maxim,inductor-value = <MAX8973_INDUCTOR_VAL_PLUS_30_PER>;
+
+						#thermal-sensor-cells = <0>;
+				};
+
+				max77621_gpu: pmic@1c {
+						compatible = "maxim,max77621";
+						reg = <0x1c>;
+						interrupt-parent = <&gpio>;
+						interrupts = <TEGRA_GPIO(A, 6) IRQ_TYPE_LEVEL_LOW>;
+						regulator-name = "PPVAR_GPU";
+						regulator-min-microvolt = <840000>;
+						regulator-max-microvolt = <1150000>;
+						regulator-ramp-delay = <12500>;
+						maxim,externally-enable;
+						maxim,enable-gpio = <&max77620 6 0>;
+						maxim,dvs-default-state = <1>;
+						maxim,disable-etr;
+						maxim,enable-active-discharge;
+						maxim,enable-bias-control;
+						maxim,pull-down-enable;
+						maxim,watchdog-timer-enable;
+						maxim,inductor-value = <MAX8973_INDUCTOR_VAL_PLUS_30_PER>;
+
+						#thermal-sensor-cells = <0>;
+				};
 	};
 
 	i2c@7000d100 {
@@ -1591,16 +1725,59 @@
 			status = "okay";
 		};
 
-		audio-codec@2d {
-			compatible = "realtek,rt5677";
-			reg = <0x2d>;
-			interrupt-parent = <&gpio>;
-			interrupts = <TEGRA_GPIO(X, 0) IRQ_TYPE_LEVEL_HIGH>;
-			realtek,reset-gpio = <&gpio TEGRA_GPIO(BB, 3) GPIO_ACTIVE_LOW>;
-			gpio-controller;
-			#gpio-cells = <2>;
-			status = "okay";
-		};
+
+				backlight: lp8557-backlight@2c {
+						compatible = "ti,lp8557";
+						reg = <0x2c>;
+						power-supply = <&pplcd_vdd>;
+						bl-name = "lp8557-backlight";
+						dev-ctrl = /bits/ 8 <0x01>;
+						init-brt = /bits/ 8 <0xFF>;
+						/* Full scale current, 20mA */
+						rom_11h {
+								rom-addr = /bits/ 8 <0x11>;
+								rom-val = /bits/ 8 <0x05>;
+						};
+						/* Frequency = 4.9kHz, magic undocumented val */
+						rom_12h {
+								rom-addr = /bits/ 8 <0x12>;
+								rom-val = /bits/ 8 <0x29>;
+						};
+						/* Boost freq = 1MHz, BComp option = 1 */
+						rom_13h {
+								rom-addr = /bits/ 8 <0x13>;
+								rom-val = /bits/ 8 <0x03>;
+						};
+						/* 4V OV, 6 output LED string enabled */
+						rom_14h {
+								rom-addr = /bits/ 8 <0x14>;
+								rom-val = /bits/ 8 <0xbf>;
+						};
+				};
+
+			audio-codec@2d {
+				compatible = "realtek,rt5677";
+				reg = <0x2d>;
+				interrupts-extended = <&gpio TEGRA_GPIO(X, 3) IRQ_TYPE_EDGE_BOTH>;
+				gpio-controller;
+				#gpio-cells = <2>;
+				// TODO: Add more?
+				// See: Documentation/devicetree/bindings/sound/rt5677.txt
+				status = "disabled";
+			};
+			audio-jack@3b {
+				// TODO: Describe TI TS3A227E
+				reg = <0x3b>;
+				status = "disabled";
+			};
+			tmp451: temperature-sensor@4c {
+				compatible = "ti,tmp451";
+				reg = <0x4c>;
+				interrupt-parent = <&gpio>;
+				interrupts = <TEGRA_GPIO(X, 4) IRQ_TYPE_LEVEL_LOW>;
+				vcc-supply = <&pp1800>;
+				#thermal-sensor-cells = <1>;
+			};
 	};
 
 	pmc@7000e400 {
@@ -1617,7 +1794,7 @@
 
 	usb@70090000 {
 		phys = <&{/padctl@7009f000/pads/usb2/lanes/usb2-0}>,
-		       <&{/padctl@7009f000/pads/pcie/lanes/pcie-6}>;
+					 <&{/padctl@7009f000/pads/pcie/lanes/pcie-6}>;
 		phy-names = "usb2-0", "usb3-0";
 
 		dvddio-pex-supply = <&avddio_1v05>;
@@ -1762,7 +1939,7 @@
 		};
 	};
 
-	max98357a {
+	speaker: max98357a {
 		compatible = "maxim,max98357a";
 		status = "okay";
 	};
@@ -1855,5 +2032,21 @@
 			regulator-min-microvolt = <5000000>;
 			regulator-max-microvolt = <5000000>;
 		};
+	};
+
+	cpu_edp: cpu-edp {
+		nvidia,edp-limit = <16000>;
+	};
+	gpu_edp: gpu-edp {
+		nvidia,edp-limit = <16000>;
+	};
+
+	tlk {
+		compatible = "nvidia,trusted-little-kernel";
+		logger = "enabled";
+		storage = "enabled";
+	};
+	ion-tegra {
+		compatible = "nvidia,tegra210-ion-heaps";
 	};
 };

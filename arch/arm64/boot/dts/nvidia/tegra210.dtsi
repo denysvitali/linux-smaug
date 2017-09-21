@@ -11,7 +11,7 @@
 	#address-cells = <2>;
 	#size-cells = <2>;
 
-	pcie@1003000 {
+	pcie-controller@01003000 {
 		compatible = "nvidia,tegra210-pcie";
 		device_type = "pci";
 		reg = <0x0 0x01003000 0x0 0x00000800   /* PADS registers */
@@ -51,7 +51,6 @@
 			device_type = "pci";
 			assigned-addresses = <0x82000800 0 0x01000000 0 0x1000>;
 			reg = <0x000800 0 0 0 0>;
-			bus-range = <0x00 0xff>;
 			status = "disabled";
 
 			#address-cells = <3>;
@@ -65,7 +64,6 @@
 			device_type = "pci";
 			assigned-addresses = <0x82001000 0 0x01001000 0 0x1000>;
 			reg = <0x001000 0 0 0 0>;
-			bus-range = <0x00 0xff>;
 			status = "disabled";
 
 			#address-cells = <3>;
@@ -281,7 +279,7 @@
 		};
 
 		dpaux: dpaux@545c0000 {
-			compatible = "nvidia,tegra124-dpaux";
+			compatible = "nvidia,tegra210-dpaux";
 			reg = <0x0 0x545c0000 0x0 0x00040000>;
 			interrupts = <GIC_SPI 159 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&tegra_car TEGRA210_CLK_DPAUX>,
@@ -290,7 +288,7 @@
 			resets = <&tegra_car 181>;
 			reset-names = "dpaux";
 			power-domains = <&pd_sor>;
-			status = "disabled";
+			status = "okay";
 
 			state_dpaux_aux: pinmux-aux {
 				groups = "dpaux-io";
@@ -364,7 +362,7 @@
 
 		iommus = <&mc TEGRA_SWGROUP_GPU>;
 
-		status = "disabled";
+		status = "okay";
 	};
 
 	lic: interrupt-controller@60004000 {
@@ -644,7 +642,7 @@
 		pinctrl-0 = <&state_dpaux_i2c>;
 		pinctrl-1 = <&state_dpaux_off>;
 		pinctrl-names = "default", "idle";
-		status = "disabled";
+		status = "okay";
 	};
 
 	spi@7000d400 {

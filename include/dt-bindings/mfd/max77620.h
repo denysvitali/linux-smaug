@@ -8,6 +8,13 @@
 #ifndef _DT_BINDINGS_MFD_MAX77620_H
 #define _DT_BINDINGS_MFD_MAX77620_H
 
+
+/* FPS enable -inputs */
+#define FPS_EN_SRC_EN0	0
+#define FPS_EN_SRC_EN1	1
+#define FPS_EN_SRC_SW	2
+#define FPS_EN_SRC_RSVD	3
+
 /* MAX77620 interrupts */
 #define MAX77620_IRQ_TOP_GLBL		0 /* Low-Battery */
 #define MAX77620_IRQ_TOP_SD		1 /* SD power fail */
@@ -35,5 +42,11 @@
 #define MAX77620_FPS_SRC_2			2
 #define MAX77620_FPS_SRC_NONE			3
 #define MAX77620_FPS_SRC_DEF			4
+
+#define FPS_SRC_0	0
+#define FPS_SRC_1	1
+#define FPS_SRC_2	2
+#define FPS_SRC_NONE	3
+#define FPS_SRC_DEF	4
 
 #endif
