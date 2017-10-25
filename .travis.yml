@@ -16,4 +16,4 @@ deploy:
 
   on:
     repo: denysvitali/linux-smaug
-    branch: linux-4.13-rc4
+    branch: linux-4.14-rc3
