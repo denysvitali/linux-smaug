@@ -325,11 +325,22 @@
 			status = "disabled";
 		};
 
-		i2c@546c0000 {
+		vii2c: i2c@546c0000 {
 			compatible = "nvidia,tegra210-i2c-vi";
-			reg = <0x0 0x546c0000 0x0 0x00040000>;
+			reg = <0x0 0x546C0000 0x0 0x00034000>;
 			interrupts = <GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			clocks = <&tegra_car TEGRA210_CLK_VI_I2C>,
+				<&tegra_car TEGRA210_CLK_I2CSLOW>,
+				<&tegra_car TEGRA210_CLK_HOST1X>;
+			clock-names = "div-clk",
+					"slow-clk",
+					"host1x-clk";
+			resets = <&tegra_car 208>;
+			reset-names = "i2c";
 			status = "disabled";
+			clock-frequency = <400000>;
 		};
 	};
 
@@ -1000,40 +1011,35 @@
 		};
 	};
 
-	sdhci@700b0000 {
-		compatible = "nvidia,tegra210-sdhci", "nvidia,tegra124-sdhci";
+	sdmmc1: sdhci@700b0000 {
+		compatible = "nvidia,tegra210-sdhci", "nvidia,tegra132-sdhci";
 		reg = <0x0 0x700b0000 0x0 0x200>;
 		interrupts = <GIC_SPI 14 IRQ_TYPE_LEVEL_HIGH>;
 		clocks = <&tegra_car TEGRA210_CLK_SDMMC1>;
-		clock-names = "sdhci";
 		resets = <&tegra_car 14>;
 		reset-names = "sdhci";
 		status = "disabled";
 	};
-
-	sdhci@700b0200 {
-		compatible = "nvidia,tegra210-sdhci", "nvidia,tegra124-sdhci";
+	sdmmc2: sdhci@700b0200 {
+		compatible = "nvidia,tegra210-sdhci", "nvidia,tegra132-sdhci";
 		reg = <0x0 0x700b0200 0x0 0x200>;
 		interrupts = <GIC_SPI 15 IRQ_TYPE_LEVEL_HIGH>;
 		clocks = <&tegra_car TEGRA210_CLK_SDMMC2>;
-		clock-names = "sdhci";
 		resets = <&tegra_car 9>;
 		reset-names = "sdhci";
 		status = "disabled";
 	};
-
-	sdhci@700b0400 {
-		compatible = "nvidia,tegra210-sdhci", "nvidia,tegra124-sdhci";
+	sdmmc3: sdhci@700b0400 {
+		compatible = "nvidia,tegra210-sdhci", "nvidia,tegra132-sdhci";
 		reg = <0x0 0x700b0400 0x0 0x200>;
 		interrupts = <GIC_SPI 19 IRQ_TYPE_LEVEL_HIGH>;
 		clocks = <&tegra_car TEGRA210_CLK_SDMMC3>;
-		clock-names = "sdhci";
 		resets = <&tegra_car 69>;
 		reset-names = "sdhci";
 		status = "disabled";
 	};
 
-	sdhci@700b0600 {
+	sdmmc4: sdhci@700b0600 {
 		compatible = "nvidia,tegra210-sdhci", "nvidia,tegra124-sdhci";
 		reg = <0x0 0x700b0600 0x0 0x200>;
 		interrupts = <GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;

@@ -404,5 +404,34 @@
 		compatible = "nvidia,tegra124-sysedp";
 		nvidia,margin = <0>;
 		nvidia,min-budget = <0>;
+		consumers {
+			//consumer-speaker {
+			//	nvidia,consumer = <&sound>;
+			//	nvidia,states = <0 2000>; /* OFF ON */
+			//};
+			consumer-backlight {
+				nvidia,consumer = <&backlight_panel>;
+					     /* 0% 10% 20% 30% 40%  50%  60%  70%  80%  90%  100% */
+				nvidia,states = <0 320 620 930 1260 1580 1900 2250 2600 2980 3360>;
+			};
+			consumer-rear-cam {
+				nvidia,consumer = <&imx219>;
+				nvidia,states = <0 500>; /* OFF ON */
+			};
+			consumer-front-cam {
+				nvidia,consumer = <&imx208>;
+				nvidia,states = <0 90>; /* OFF ON */
+			};
+			consumer-wifi {
+				nvidia,consumer = <&wifi>;
+				nvidia,states = <0 2050>; /* OFF ON */
+				nvidia,consumer-always-on;
+			};
+			consumer-emmc {
+				nvidia,consumer = <&sdmmc4>;
+				nvidia,states = <0 990>; /* OFF ON */
+				nvidia,consumer-always-on;
+			};
+		};
 	};
 };
