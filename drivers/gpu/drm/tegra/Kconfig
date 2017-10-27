@@ -31,3 +31,4 @@ config DRM_TEGRA_STAGING
 	  If unsure, choose N.
 
 endif
+source "drivers/gpu/drm/tegra/camera/Kconfig"
