@@ -165,7 +165,7 @@ static int get_lightbar_version(struct cros_ec_dev *ec,
 	ret = 0;
 exit:
 	kfree(msg);
-	return ret;
+	return 1; /* TODO_denvit: Changeme back to ret ! */
 }
 
 static ssize_t version_show(struct device *dev,
