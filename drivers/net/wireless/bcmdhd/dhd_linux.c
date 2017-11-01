@@ -3093,8 +3093,10 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan,
 		ASSERT(ifidx < DHD_MAX_IFS && dhd->iflist[ifidx]);
 		ifp = dhd->iflist[ifidx];
 
+		#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 11, 0)
 		if (ifp->net)
 			ifp->net->last_rx = jiffies;
+		#endif
 
 		if (ntoh16(skb->protocol) != ETHER_TYPE_BRCM) {
 			dhdp->dstats.rx_bytes += skb->len;
@@ -4428,14 +4430,25 @@ dhd_allocate_if(dhd_pub_t *dhdpub, int ifidx, char *name,
 		strncpy(ifp->net->name, name, IFNAMSIZ);
 		ifp->net->name[IFNAMSIZ - 1] = '\0';
 	}
-#ifdef WL_CFG80211
+#if (LINUX_VERSION_CODE>=KERNEL_VERSION(4,11,9))
+	#ifdef WL_CFG80211
 	if (ifidx == 0)
 		ifp->net->destructor = free_netdev;
 	else
 		ifp->net->destructor = dhd_netdev_free;
-#else
+	#else
 	ifp->net->destructor = free_netdev;
-#endif /* WL_CFG80211 */
+	#endif /* WL_CFG80211 */
+#else
+	#ifdef WL_CFG80211
+	if (ifidx == 0)
+		ifp->net->destructor = free_netdev;
+	else
+		ifp->net->destructor = dhd_netdev_free;
+	#else
+	ifp->net->destructor = free_netdev;
+	#endif /* WL_CFG80211 */
+#endif
 	strncpy(ifp->name, ifp->net->name, IFNAMSIZ);
 	ifp->name[IFNAMSIZ - 1] = '\0';
 	dhdinfo->iflist[ifidx] = ifp;

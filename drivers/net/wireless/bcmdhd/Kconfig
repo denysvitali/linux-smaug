@@ -1,4 +1,4 @@
-config BCMDHD
+config WLAN_VENDOR_BCMDHD
 	tristate "Broadcom FullMAC wireless cards support (Google)"
 	---help---
 	  This module adds support for wireless adapters based on
