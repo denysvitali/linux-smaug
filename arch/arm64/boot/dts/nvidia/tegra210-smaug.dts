@@ -25,8 +25,7 @@
 	};
 
 	chosen {
-		bootargs = "earlycon nouveau.config=NvGrUseFW=1 drm.atomic=1 firmware_class.path=/lib/firmware";
-		stdout-path = "serial0:115200n8";
+		bootargs = "console=/dev/fb0,115200n8 consoleblank=0disp.screen0_output_mode=EDID:2560x1800p60 nouveau.config=NvGrUseFW=1 drm.debug=31 drm.atomic=1 nofb firmware_class.path=/lib/firmware";
 	};
 
 	memory {
