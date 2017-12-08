@@ -8,7 +8,7 @@
 #include <dt-bindings/thermal/thermal.h>
 #include <dt-bindings/thermal/tegra210-trips.h>
 
-#include "tegra210.dtsi"
+#include "tegra210-smaug.dtsi"
 #include "tegra210-smaug-camera.dtsi"
 #include "tegra210-smaug-sysedp.dtsi"
 
@@ -1738,35 +1738,6 @@
 			status = "okay";
 		};
 
-
-				backlight: lp8557-backlight@2c {
-						compatible = "ti,lp8557";
-						reg = <0x2c>;
-						power-supply = <&pplcd_vdd>;
-						bl-name = "lp8557-backlight";
-						dev-ctrl = /bits/ 8 <0x01>;
-						init-brt = /bits/ 8 <0xFF>;
-						/* Full scale current, 20mA */
-						rom_11h {
-								rom-addr = /bits/ 8 <0x11>;
-								rom-val = /bits/ 8 <0x05>;
-						};
-						/* Frequency = 4.9kHz, magic undocumented val */
-						rom_12h {
-								rom-addr = /bits/ 8 <0x12>;
-								rom-val = /bits/ 8 <0x29>;
-						};
-						/* Boost freq = 1MHz, BComp option = 1 */
-						rom_13h {
-								rom-addr = /bits/ 8 <0x13>;
-								rom-val = /bits/ 8 <0x03>;
-						};
-						/* 4V OV, 6 output LED string enabled */
-						rom_14h {
-								rom-addr = /bits/ 8 <0x14>;
-								rom-val = /bits/ 8 <0xbf>;
-						};
-				};
 
 			audio-codec@2d {
 				compatible = "realtek,rt5677";

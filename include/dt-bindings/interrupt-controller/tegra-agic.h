@@ -1,21 +1,27 @@
 /*
  * This header provides constants for the TEGRA AGIC.
  */
+
 #ifndef _DT_BINDINGS_INTERRUPT_CONTROLLER_TEGRA_AGIC_H
 #define _DT_BINDINGS_INTERRUPT_CONTROLLER_TEGRA_AGIC_H
+
 #include <dt-bindings/interrupt-controller/arm-gic.h>
+
 /* interrupt numbers */
+
 #define AGIC_IRQ(x)			(x - 32)
 /* AMISC Mailbox Full Interrupts */
 #define INT_AMISC_MBOX_FULL0		AGIC_IRQ(32)
 #define INT_AMISC_MBOX_FULL1		AGIC_IRQ(33)
 #define INT_AMISC_MBOX_FULL2		AGIC_IRQ(34)
 #define INT_AMISC_MBOX_FULL3		AGIC_IRQ(35)
+
 /* AMISC Mailbox Empty Interrupts */
 #define INT_AMISC_MBOX_EMPTY0		AGIC_IRQ(36)
 #define INT_AMISC_MBOX_EMPTY1		AGIC_IRQ(37)
 #define INT_AMISC_MBOX_EMPTY2		AGIC_IRQ(38)
 #define INT_AMISC_MBOX_EMPTY3		AGIC_IRQ(39)
+
 /* AMISC CPU Arbitrated Semaphore Interrupt */
 #define INT_AMISC_CPU_ARB_SEMA0		AGIC_IRQ(40)
 #define INT_AMISC_CPU_ARB_SEMA1		AGIC_IRQ(41)
@@ -25,6 +31,7 @@
 #define INT_AMISC_CPU_ARB_SEMA5		AGIC_IRQ(45)
 #define INT_AMISC_CPU_ARB_SEMA6		AGIC_IRQ(46)
 #define INT_AMISC_CPU_ARB_SEMA7		AGIC_IRQ(47)
+
 /* AMISC ADSP Arbitrated Semaphore Interrupt */
 #define INT_AMISC_ADSP_ARB_SEMA0	AGIC_IRQ(48)
 #define INT_AMISC_ADSP_ARB_SEMA1	AGIC_IRQ(49)
@@ -34,6 +41,7 @@
 #define INT_AMISC_ADSP_ARB_SEMA5	AGIC_IRQ(53)
 #define INT_AMISC_ADSP_ARB_SEMA6	AGIC_IRQ(54)
 #define INT_AMISC_ADSP_ARB_SEMA7	AGIC_IRQ(55)
+
 /* INT_ADMA Channel End of Transfer Interrupt */
 #define INT_ADMA_EOT0			AGIC_IRQ(56)
 #define INT_ADMA_EOT1			AGIC_IRQ(57)
@@ -57,20 +65,29 @@
 #define INT_ADMA_EOT19			AGIC_IRQ(75)
 #define INT_ADMA_EOT20			AGIC_IRQ(76)
 #define INT_ADMA_EOT21			AGIC_IRQ(77)
+
 /* ADSP/PTM Performance Monitoring Unit Interrupt */
 #define INT_ADSP_PMU			AGIC_IRQ(78)
+
 /* ADSP Watchdog Timer Reset Request */
 #define INT_ADSP_WDT			AGIC_IRQ(79)
+
 /* ADSP L2 Cache Controller Interrupt */
 #define INT_ADSP_L2CC			AGIC_IRQ(80)
+
 /* AHUB Error Interrupt */
 #define INT_AHUB_ERR			AGIC_IRQ(81)
+
 /* AMC Error Interrupt */
 #define INT_AMC_ERR			AGIC_IRQ(82)
+
 /* INT_ADMA Error Interrupt */
 #define INT_ADMA_ERR			AGIC_IRQ(83)
+
 /* ADSP Standby WFI.  ADSP in idle mode. Waiting for Interrupt */
 #define INT_WFI				AGIC_IRQ(84)
+
 /* ADSP Standby WFE.  ADSP in idle mode. Waiting for Event */
 #define INT_WFE				AGIC_IRQ(85)
+
 #endif

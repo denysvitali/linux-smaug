@@ -1,12 +1,15 @@
 #include <dt-bindings/mfd/max77620.h>
 #include <dt-bindings/gpio/tegra-gpio.h>
 #include <dt-bindings/pinctrl/pinctrl-tegra.h>
+#include <dt-bindings/pinctrl/pinctrl-tegra-xusb.h>
 #include <dt-bindings/thermal/thermal.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/regulator/max8973.h>
 #include <dt-bindings/soc/tegra-pmc.h>
+#include <dt-bindings/interrupt-controller/tegra-agic.h>
 #include "tegra210.dtsi"
 #include "tegra210-audio.dtsi"
+#include "tegra210-throttle.dtsi"
 #include "tegra210-smaug-pinmux.dtsi"
 #include "tegra210-smaug-sysedp.dtsi"
 #include "tegra210-smaug-camera.dtsi"
@@ -80,20 +83,6 @@
 		gpu_edp_cdev: gpu-edp-cdev {
 			status = "okay";
 		};
-	};
-	adma: adma@702e2000  {
-		interrupts = <GIC_SPI INT_ADMA_EOT0 IRQ_TYPE_LEVEL_HIGH>,
-			     <GIC_SPI INT_ADMA_EOT1 IRQ_TYPE_LEVEL_HIGH>,
-			     <GIC_SPI INT_ADMA_EOT2 IRQ_TYPE_LEVEL_HIGH>,
-			     <GIC_SPI INT_ADMA_EOT3 IRQ_TYPE_LEVEL_HIGH>,
-			     <GIC_SPI INT_ADMA_EOT4 IRQ_TYPE_LEVEL_HIGH>,
-			     <GIC_SPI INT_ADMA_EOT5 IRQ_TYPE_LEVEL_HIGH>,
-			     <GIC_SPI INT_ADMA_EOT6 IRQ_TYPE_LEVEL_HIGH>,
-			     <GIC_SPI INT_ADMA_EOT7 IRQ_TYPE_LEVEL_HIGH>,
-			     <GIC_SPI INT_ADMA_EOT8 IRQ_TYPE_LEVEL_HIGH>,
-			     <GIC_SPI INT_ADMA_EOT9 IRQ_TYPE_LEVEL_HIGH>;
-		dma-channels = <10>;
-		status = "okay";
 	};
 	speaker: max98357a {
 		compatible = "maxim,max98357a";
@@ -364,19 +353,6 @@
 					trip = <&gpu_scaling_trip3>;
 					cooling-device = <&gpu_scaling_cdev 4 4>;
 				};
-			};
-		};
-	};
-	soctherm: soctherm@0,700e2000 {
-		throttle-cfgs {
-			/* Voltage compartor NCS2202 connect to OC1 */
-			oc1 {
-				alarm-filter = <5100000>;
-				alarm-cnt-threshold = <100>;
-				polarity = <1>; /* ACTIVE_LOW */
-				priority = <70>;
-				cpu-throt-depth = <75>;
-				gpu-throt-level = <TEGRA_SOCTHERM_THROT_LEVEL_MED>;
 			};
 		};
 	};
