@@ -67,3 +67,6 @@ cp -Rv /tmp/vendor/google/mount/firmware/* firmware/
 umount /tmp/vendor/google/mount
 # Nvidia
 cp -Rv /tmp/vendor/nvidia/extracted/vendor/nvidia/dragon/proprietary/* firmware/nvidia/tegra210/
+
+# Broadcom
+wget 'https://android.googlesource.com/platform/hardware/broadcom/wlan/+/android-o-mr1-preview-2/bcmdhd/firmware/bcm4354/fw_bcm4354.bin?format=TEXT' -O firmware/fw_bcmdhd.bin.b64 && cat firmware/fw_bcmdhd.bin.b64 | base64 -d > firmware/fw_bcmdhd.bin
