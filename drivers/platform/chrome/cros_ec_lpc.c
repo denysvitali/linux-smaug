@@ -21,29 +21,24 @@
  * expensive.
  */
 
-#include <linux/acpi.h>
 #include <linux/dmi.h>
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/mfd/cros_ec.h>
 #include <linux/mfd/cros_ec_commands.h>
-#include <linux/mfd/cros_ec_lpc_reg.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/printk.h>
 
-#define DRV_NAME "cros_ec_lpcs"
-#define ACPI_DRV_NAME "GOOG0004"
+#define DRV_NAME "cros_ec_lpc"
 
 static int ec_response_timed_out(void)
 {
 	unsigned long one_second = jiffies + HZ;
-	u8 data;
 
 	usleep_range(200, 300);
 	do {
-		if (!(cros_ec_lpc_read_bytes(EC_LPC_ADDR_HOST_CMD, 1, &data) &
-		    EC_LPC_STATUS_BUSY_MASK))
+		if (!(inb(EC_LPC_ADDR_HOST_CMD) & EC_LPC_STATUS_BUSY_MASK))
 			return 0;
 		usleep_range(100, 200);
 	} while (time_before(jiffies, one_second));
@@ -56,20 +51,21 @@ static int cros_ec_pkt_xfer_lpc(struct cros_ec_device *ec,
 {
 	struct ec_host_request *request;
 	struct ec_host_response response;
-	u8 sum;
+	u8 sum = 0;
+	int i;
 	int ret = 0;
 	u8 *dout;
 
 	ret = cros_ec_prepare_tx(ec, msg);
 
 	/* Write buffer */
-	cros_ec_lpc_write_bytes(EC_LPC_ADDR_HOST_PACKET, ret, ec->dout);
+	for (i = 0; i < ret; i++)
+		outb(ec->dout[i], EC_LPC_ADDR_HOST_PACKET + i);
 
 	request = (struct ec_host_request *)ec->dout;
 
 	/* Here we go */
-	sum = EC_COMMAND_PROTOCOL_3;
-	cros_ec_lpc_write_bytes(EC_LPC_ADDR_HOST_CMD, 1, &sum);
+	outb(EC_COMMAND_PROTOCOL_3, EC_LPC_ADDR_HOST_CMD);
 
 	if (ec_response_timed_out()) {
 		dev_warn(ec->dev, "EC responsed timed out\n");
@@ -78,15 +74,17 @@ static int cros_ec_pkt_xfer_lpc(struct cros_ec_device *ec,
 	}
 
 	/* Check result */
-	msg->result = cros_ec_lpc_read_bytes(EC_LPC_ADDR_HOST_DATA, 1, &sum);
+	msg->result = inb(EC_LPC_ADDR_HOST_DATA);
 	ret = cros_ec_check_result(ec, msg);
 	if (ret)
 		goto done;
 
 	/* Read back response */
 	dout = (u8 *)&response;
-	sum = cros_ec_lpc_read_bytes(EC_LPC_ADDR_HOST_PACKET, sizeof(response),
-				     dout);
+	for (i = 0; i < sizeof(response); i++) {
+		dout[i] = inb(EC_LPC_ADDR_HOST_PACKET + i);
+		sum += dout[i];
+	}
 
 	msg->result = response.result;
 
@@ -99,9 +97,11 @@ static int cros_ec_pkt_xfer_lpc(struct cros_ec_device *ec,
 	}
 
 	/* Read response and process checksum */
-	sum += cros_ec_lpc_read_bytes(EC_LPC_ADDR_HOST_PACKET +
-				      sizeof(response), response.data_len,
-				      msg->data);
+	for (i = 0; i < response.data_len; i++) {
+		msg->data[i] =
+			inb(EC_LPC_ADDR_HOST_PACKET + sizeof(response) + i);
+		sum += msg->data[i];
+	}
 
 	if (sum) {
 		dev_err(ec->dev,
@@ -121,7 +121,8 @@ static int cros_ec_cmd_xfer_lpc(struct cros_ec_device *ec,
 				struct cros_ec_command *msg)
 {
 	struct ec_lpc_host_args args;
-	u8 sum;
+	int csum;
+	int i;
 	int ret = 0;
 
 	if (msg->outsize > EC_PROTO2_MAX_PARAM_SIZE ||
@@ -138,20 +139,24 @@ static int cros_ec_cmd_xfer_lpc(struct cros_ec_device *ec,
 	args.data_size = msg->outsize;
 
 	/* Initialize checksum */
-	sum = msg->command + args.flags + args.command_version + args.data_size;
+	csum = msg->command + args.flags +
+		args.command_version + args.data_size;
 
 	/* Copy data and update checksum */
-	sum += cros_ec_lpc_write_bytes(EC_LPC_ADDR_HOST_PARAM, msg->outsize,
-				       msg->data);
+	for (i = 0; i < msg->outsize; i++) {
+		outb(msg->data[i], EC_LPC_ADDR_HOST_PARAM + i);
+		csum += msg->data[i];
+	}
 
 	/* Finalize checksum and write args */
-	args.checksum = sum;
-	cros_ec_lpc_write_bytes(EC_LPC_ADDR_HOST_ARGS, sizeof(args),
-				(u8 *)&args);
+	args.checksum = csum & 0xFF;
+	outb(args.flags, EC_LPC_ADDR_HOST_ARGS);
+	outb(args.command_version, EC_LPC_ADDR_HOST_ARGS + 1);
+	outb(args.data_size, EC_LPC_ADDR_HOST_ARGS + 2);
+	outb(args.checksum, EC_LPC_ADDR_HOST_ARGS + 3);
 
 	/* Here we go */
-	sum = msg->command;
-	cros_ec_lpc_write_bytes(EC_LPC_ADDR_HOST_CMD, 1, &sum);
+	outb(msg->command, EC_LPC_ADDR_HOST_CMD);
 
 	if (ec_response_timed_out()) {
 		dev_warn(ec->dev, "EC responsed timed out\n");
@@ -160,14 +165,16 @@ static int cros_ec_cmd_xfer_lpc(struct cros_ec_device *ec,
 	}
 
 	/* Check result */
-	msg->result = cros_ec_lpc_read_bytes(EC_LPC_ADDR_HOST_DATA, 1, &sum);
+	msg->result = inb(EC_LPC_ADDR_HOST_DATA);
 	ret = cros_ec_check_result(ec, msg);
 	if (ret)
 		goto done;
 
 	/* Read back args */
-	cros_ec_lpc_read_bytes(EC_LPC_ADDR_HOST_ARGS, sizeof(args),
-			       (u8 *)&args);
+	args.flags = inb(EC_LPC_ADDR_HOST_ARGS);
+	args.command_version = inb(EC_LPC_ADDR_HOST_ARGS + 1);
+	args.data_size = inb(EC_LPC_ADDR_HOST_ARGS + 2);
+	args.checksum = inb(EC_LPC_ADDR_HOST_ARGS + 3);
 
 	if (args.data_size > msg->insize) {
 		dev_err(ec->dev,
@@ -178,17 +185,20 @@ static int cros_ec_cmd_xfer_lpc(struct cros_ec_device *ec,
 	}
 
 	/* Start calculating response checksum */
-	sum = msg->command + args.flags + args.command_version + args.data_size;
+	csum = msg->command + args.flags +
+		args.command_version + args.data_size;
 
 	/* Read response and update checksum */
-	sum += cros_ec_lpc_read_bytes(EC_LPC_ADDR_HOST_PARAM, args.data_size,
-				      msg->data);
+	for (i = 0; i < args.data_size; i++) {
+		msg->data[i] = inb(EC_LPC_ADDR_HOST_PARAM + i);
+		csum += msg->data[i];
+	}
 
 	/* Verify checksum */
-	if (args.checksum != sum) {
+	if (args.checksum != (csum & 0xFF)) {
 		dev_err(ec->dev,
 			"bad packet checksum, expected %02x, got %02x\n",
-			args.checksum, sum);
+			args.checksum, csum & 0xFF);
 		ret = -EBADMSG;
 		goto done;
 	}
@@ -212,13 +222,14 @@ static int cros_ec_lpc_readmem(struct cros_ec_device *ec, unsigned int offset,
 
 	/* fixed length */
 	if (bytes) {
-		cros_ec_lpc_read_bytes(EC_LPC_ADDR_MEMMAP + offset, bytes, s);
-		return bytes;
+		for (; cnt < bytes; i++, s++, cnt++)
+			*s = inb(EC_LPC_ADDR_MEMMAP + i);
+		return cnt;
 	}
 
 	/* string */
 	for (; i < EC_MEMMAP_SIZE; i++, s++) {
-		cros_ec_lpc_read_bytes(EC_LPC_ADDR_MEMMAP + i, 1, s);
+		*s = inb(EC_LPC_ADDR_MEMMAP + i);
 		cnt++;
 		if (!*s)
 			break;
@@ -227,23 +238,10 @@ static int cros_ec_lpc_readmem(struct cros_ec_device *ec, unsigned int offset,
 	return cnt;
 }
 
-static void cros_ec_lpc_acpi_notify(acpi_handle device, u32 value, void *data)
-{
-	struct cros_ec_device *ec_dev = data;
-
-	if (ec_dev->mkbp_event_supported &&
-	    cros_ec_get_next_event(ec_dev, NULL) > 0)
-		blocking_notifier_call_chain(&ec_dev->event_notifier, 0,
-					     ec_dev);
-}
-
 static int cros_ec_lpc_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct acpi_device *adev;
-	acpi_status status;
 	struct cros_ec_device *ec_dev;
-	u8 buf[2];
 	int ret;
 
 	if (!devm_request_region(dev, EC_LPC_ADDR_MEMMAP, EC_MEMMAP_SIZE,
@@ -252,8 +250,8 @@ static int cros_ec_lpc_probe(struct platform_device *pdev)
 		return -EBUSY;
 	}
 
-	cros_ec_lpc_read_bytes(EC_LPC_ADDR_MEMMAP + EC_MEMMAP_ID, 2, buf);
-	if (buf[0] != 'E' || buf[1] != 'C') {
+	if ((inb(EC_LPC_ADDR_MEMMAP + EC_MEMMAP_ID) != 'E') ||
+	    (inb(EC_LPC_ADDR_MEMMAP + EC_MEMMAP_ID + 1) != 'C')) {
 		dev_err(dev, "EC ID not detected\n");
 		return -ENODEV;
 	}
@@ -289,33 +287,12 @@ static int cros_ec_lpc_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	/*
-	 * Connect a notify handler to process MKBP messages if we have a
-	 * companion ACPI device.
-	 */
-	adev = ACPI_COMPANION(dev);
-	if (adev) {
-		status = acpi_install_notify_handler(adev->handle,
-						     ACPI_ALL_NOTIFY,
-						     cros_ec_lpc_acpi_notify,
-						     ec_dev);
-		if (ACPI_FAILURE(status))
-			dev_warn(dev, "Failed to register notifier %08x\n",
-				 status);
-	}
-
 	return 0;
 }
 
 static int cros_ec_lpc_remove(struct platform_device *pdev)
 {
 	struct cros_ec_device *ec_dev;
-	struct acpi_device *adev;
-
-	adev = ACPI_COMPANION(&pdev->dev);
-	if (adev)
-		acpi_remove_notify_handler(adev->handle, ACPI_ALL_NOTIFY,
-					   cros_ec_lpc_acpi_notify);
 
 	ec_dev = platform_get_drvdata(pdev);
 	cros_ec_remove(ec_dev);
@@ -323,13 +300,7 @@ static int cros_ec_lpc_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct acpi_device_id cros_ec_lpc_acpi_device_ids[] = {
-	{ ACPI_DRV_NAME, 0 },
-	{ }
-};
-MODULE_DEVICE_TABLE(acpi, cros_ec_lpc_acpi_device_ids);
-
-static const struct dmi_system_id cros_ec_lpc_dmi_table[] __initconst = {
+static struct dmi_system_id cros_ec_lpc_dmi_table[] __initdata = {
 	{
 		/*
 		 * Today all Chromebooks/boxes ship with Google_* as version and
@@ -366,34 +337,16 @@ static const struct dmi_system_id cros_ec_lpc_dmi_table[] __initconst = {
 };
 MODULE_DEVICE_TABLE(dmi, cros_ec_lpc_dmi_table);
 
-#ifdef CONFIG_PM_SLEEP
-static int cros_ec_lpc_suspend(struct device *dev)
-{
-	struct cros_ec_device *ec_dev = dev_get_drvdata(dev);
-
-	return cros_ec_suspend(ec_dev);
-}
-
-static int cros_ec_lpc_resume(struct device *dev)
-{
-	struct cros_ec_device *ec_dev = dev_get_drvdata(dev);
-
-	return cros_ec_resume(ec_dev);
-}
-#endif
-
-const struct dev_pm_ops cros_ec_lpc_pm_ops = {
-	SET_LATE_SYSTEM_SLEEP_PM_OPS(cros_ec_lpc_suspend, cros_ec_lpc_resume)
-};
-
 static struct platform_driver cros_ec_lpc_driver = {
 	.driver = {
 		.name = DRV_NAME,
-		.acpi_match_table = cros_ec_lpc_acpi_device_ids,
-		.pm = &cros_ec_lpc_pm_ops,
 	},
 	.probe = cros_ec_lpc_probe,
 	.remove = cros_ec_lpc_remove,
+};
+
+static struct platform_device cros_ec_lpc_device = {
+	.name = DRV_NAME
 };
 
 static int __init cros_ec_lpc_init(void)
@@ -405,13 +358,18 @@ static int __init cros_ec_lpc_init(void)
 		return -ENODEV;
 	}
 
-	cros_ec_lpc_reg_init();
-
 	/* Register the driver */
 	ret = platform_driver_register(&cros_ec_lpc_driver);
 	if (ret) {
 		pr_err(DRV_NAME ": can't register driver: %d\n", ret);
-		cros_ec_lpc_reg_destroy();
+		return ret;
+	}
+
+	/* Register the device, and it'll get hooked up automatically */
+	ret = platform_device_register(&cros_ec_lpc_device);
+	if (ret) {
+		pr_err(DRV_NAME ": can't register device: %d\n", ret);
+		platform_driver_unregister(&cros_ec_lpc_driver);
 		return ret;
 	}
 
@@ -420,8 +378,8 @@ static int __init cros_ec_lpc_init(void)
 
 static void __exit cros_ec_lpc_exit(void)
 {
+	platform_device_unregister(&cros_ec_lpc_device);
 	platform_driver_unregister(&cros_ec_lpc_driver);
-	cros_ec_lpc_reg_destroy();
 }
 
 module_init(cros_ec_lpc_init);
