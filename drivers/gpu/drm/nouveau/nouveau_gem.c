@@ -74,6 +74,8 @@ nouveau_gem_object_open(struct drm_gem_object *gem, struct drm_file *file_priv)
 	struct nouveau_vma *vma;
 	int ret;
 
+	pr_info("> %s(gem=%p, file_priv=%p)\n", __func__, gem, file_priv);
+
 	if (cli->vmm.vmm.object.oclass < NVIF_CLASS_VMM_NV50)
 		return 0;
 
@@ -90,6 +92,7 @@ nouveau_gem_object_open(struct drm_gem_object *gem, struct drm_file *file_priv)
 	pm_runtime_put_autosuspend(dev);
 out:
 	ttm_bo_unreserve(&nvbo->bo);
+	pr_info("< %s() = %d\n", __func__, ret);
 	return ret;
 }
 
@@ -236,6 +239,8 @@ nouveau_gem_info(struct drm_file *file_priv, struct drm_gem_object *gem,
 	struct nouveau_bo *nvbo = nouveau_gem_object(gem);
 	struct nouveau_vma *vma;
 
+	pr_info("> %s(file_priv=%p, gem=%p, rep=%p)\n", __func__, file_priv, gem, rep);
+
 	if (is_power_of_2(nvbo->valid_domains))
 		rep->domain = nvbo->valid_domains;
 	else if (nvbo->bo.mem.mem_type == TTM_PL_TT)
@@ -251,6 +256,8 @@ nouveau_gem_info(struct drm_file *file_priv, struct drm_gem_object *gem,
 		rep->offset = vma->addr;
 	}
 
+	pr_info("  kind: %02x\n", nvbo->kind);
+
 	rep->size = nvbo->bo.mem.num_pages << PAGE_SHIFT;
 	rep->map_handle = drm_vma_node_offset_addr(&nvbo->bo.vma_node);
 	rep->tile_mode = nvbo->mode;
@@ -262,6 +269,7 @@ nouveau_gem_info(struct drm_file *file_priv, struct drm_gem_object *gem,
 		rep->tile_flags |= nvbo->kind << 8 | nvbo->comp << 16;
 	else
 		rep->tile_flags |= nvbo->zeta;
+	pr_info("< %s()\n", __func__);
 	return 0;
 }
 
@@ -1062,17 +1070,6 @@ static bool nouveau_bo_check_tiling(struct nouveau_bo *bo,
 	       bo->zeta == tiling->zeta && bo->mode == tiling->mode;
 }
 
-static void nouveau_bo_set_tiling(struct nouveau_bo *bo,
-				  const struct nouveau_tiling *tiling)
-{
-	bo->page = tiling->page;
-	bo->contig = tiling->contig;
-	bo->kind = tiling->kind;
-	bo->comp = tiling->comp;
-	bo->zeta = tiling->zeta;
-	bo->mode = tiling->mode;
-}
-
 int
 nouveau_gem_ioctl_set_tiling(struct drm_device *dev, void *data,
 			     struct drm_file *file_priv)
@@ -1080,48 +1077,87 @@ nouveau_gem_ioctl_set_tiling(struct drm_device *dev, void *data,
 	struct nouveau_cli *cli = nouveau_cli(file_priv);
 	struct drm_nouveau_gem_tiling *req = data;
 	struct nouveau_tiling tiling;
+	struct nouveau_bo *bo, *nvbo;
 	struct drm_gem_object *gem;
-	struct nouveau_vma *vma;
-	struct nouveau_mem *mem;
-	struct nouveau_bo *bo;
+	struct sg_table *sgt;
+	u32 flags = 0;
 	int err = 0;
 
+	pr_info("> %s(dev=%p, data=%p, file_priv=%p)\n", __func__, dev, data, file_priv);
+
 	/* check flags for validity */
-	if (req->flags != 0)
+	if (req->flags != 0) {
+		pr_info("  invalid flags\n");
+		pr_info("< %s()\n", __func__);
 		return -EINVAL;
+	}
 
 	err = nouveau_parse_tiling(cli, &tiling, req->tile_mode,
 				   req->tile_flags);
-	if (err < 0)
+	if (err < 0) {
+		pr_info("  failed to parsing tiling\n");
+		pr_info("< %s() = %d\n", __func__, err);
 		return err;
+	}
 
 	gem = drm_gem_object_lookup(file_priv, req->handle);
-	if (!gem)
+	if (!gem) {
+		pr_info("  failed to find GEM object\n");
+		pr_info("< %s()\n", __func__);
 		return -ENOENT;
+	}
 
 	bo = nouveau_gem_object(gem);
 
-	if (nouveau_bo_check_tiling(bo, &tiling))
-		goto out;
+	/*
+	 * If the requested tiling mode is incompatible, a new buffer object
+	 * will be created. A handle to the new buffer object is returned in
+	 * the ->handle field. If no new buffer object is needed, return the
+	 * 0 handle.
+	 */
+	req->handle = 0;
 
-	err = ttm_bo_reserve(&bo->bo, false, false, NULL);
-	if (err)
+	if (nouveau_bo_check_tiling(bo, &tiling)) {
+		pr_info("  tiling already correct\n");
 		goto out;
-
-	vma = nouveau_vma_find(bo, &cli->vmm);
-	if (!vma) {
-		err = -ENOENT;
-		goto unreserve;
 	}
 
-	nouveau_bo_set_tiling(bo, &tiling);
-	mem = bo->bo.mem.mm_node;
-	mem->kind = bo->kind;
-	nouveau_vma_map(vma, mem);
+	pr_info("  creating new buffer object...\n");
+	pr_info("  pages: %p num_pages: %lu\n", bo->bo.ttm->pages, bo->bo.num_pages);
 
-unreserve:
-	ttm_bo_unreserve(&bo->bo);
+	sgt = drm_prime_pages_to_sg(bo->bo.ttm->pages, bo->bo.num_pages);
+	if (!sgt) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	/* XXX */
+	flags |= TTM_PL_FLAG_TT | TTM_PL_FLAG_UNCACHED;
+
+	err = nouveau_bo_new(cli, gem->size, bo->bo.mem.page_alignment, flags,
+			     req->tile_mode, req->tile_flags, sgt, NULL,
+			     &nvbo);
+	if (err < 0)
+		goto free_sgt;
+
+	err = drm_gem_object_init(dev, &nvbo->gem, nvbo->bo.mem.size);
+	if (err < 0)
+		goto unref_bo;
+
+	err = drm_gem_handle_create(file_priv, &nvbo->gem, &req->handle);
+	if (err < 0)
+		goto unref;
+
 out:
-	drm_gem_object_unreference_unlocked(gem);
+	pr_info("< %s() = %d\n", __func__, err);
 	return err;
+
+unref:
+	drm_gem_object_unreference(&nvbo->gem);
+unref_bo:
+	nouveau_bo_ref(NULL, &nvbo);
+free_sgt:
+	sg_free_table(sgt);
+	kfree(sgt);
+	goto out;
 }
