@@ -44,7 +44,7 @@
 #include "drm_crtc_internal.h"
 #include "drm_crtc_helper_internal.h"
 
-static bool drm_fbdev_emulation = false;
+static bool drm_fbdev_emulation = true;
 module_param_named(fbdev_emulation, drm_fbdev_emulation, bool, 0600);
 MODULE_PARM_DESC(fbdev_emulation,
 		 "Enable legacy fbdev emulation [default=true]");
