@@ -1488,11 +1488,9 @@ static int tegra_dsi_probe(struct platform_device *pdev)
 	dsi->format = MIPI_DSI_FMT_RGB888;
 	dsi->lanes = 4;
 
-	if (!pdev->dev.pm_domain) {
-		dsi->rst = devm_reset_control_get(&pdev->dev, "dsi");
-		if (IS_ERR(dsi->rst))
-			return PTR_ERR(dsi->rst);
-	}
+	dsi->rst = devm_reset_control_get(&pdev->dev, "dsi");
+	if (IS_ERR(dsi->rst))
+		return PTR_ERR(dsi->rst);
 
 	dsi->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(dsi->clk)) {
@@ -1593,12 +1591,10 @@ static int tegra_dsi_suspend(struct device *dev)
 	struct tegra_dsi *dsi = dev_get_drvdata(dev);
 	int err;
 
-	if (dsi->rst) {
-		err = reset_control_assert(dsi->rst);
-		if (err < 0) {
-			dev_err(dev, "failed to assert reset: %d\n", err);
-			return err;
-		}
+	err = reset_control_assert(dsi->rst);
+	if (err < 0) {
+		dev_err(dev, "failed to assert reset: %d\n", err);
+		return err;
 	}
 
 	usleep_range(1000, 2000);
@@ -1636,12 +1632,10 @@ static int tegra_dsi_resume(struct device *dev)
 
 	usleep_range(1000, 2000);
 
-	if (dsi->rst) {
-		err = reset_control_deassert(dsi->rst);
-		if (err < 0) {
-			dev_err(dev, "cannot assert reset: %d\n", err);
-			goto disable_clk_lp;
-		}
+	err = reset_control_deassert(dsi->rst);
+	if (err < 0) {
+		dev_err(dev, "cannot assert reset: %d\n", err);
+		goto disable_clk_lp;
 	}
 
 	return 0;
