@@ -151,8 +151,6 @@ struct tegra_sor_soc {
 
 	const struct tegra_sor_hdmi_settings *settings;
 	unsigned int num_settings;
-
-	const u8 *xbar_cfg;
 };
 
 struct tegra_sor;
@@ -1614,14 +1612,6 @@ static void tegra_sor_edp_enable(struct drm_encoder *encoder)
 	value &= ~SOR_PLL2_PORT_POWERDOWN;
 	tegra_sor_writel(sor, value, SOR_PLL2);
 
-	/* XXX not in TRM */
-	for (value = 0, i = 0; i < 5; i++)
-		value |= SOR_XBAR_CTRL_LINK0_XSEL(i, sor->soc->xbar_cfg[i]) |
-			 SOR_XBAR_CTRL_LINK1_XSEL(i, i);
-
-	tegra_sor_writel(sor, 0x00000000, SOR_XBAR_POL);
-	tegra_sor_writel(sor, value, SOR_XBAR_CTRL);
-
 	/* switch to DP parent clock */
 	err = tegra_sor_set_parent_clock(sor, sor->clk_dp);
 	if (err < 0)
@@ -1989,7 +1979,7 @@ static void tegra_sor_hdmi_enable(struct drm_encoder *encoder)
 	struct tegra_sor *sor = to_sor(output);
 	struct tegra_sor_state *state;
 	struct drm_display_mode *mode;
-	unsigned int div, i;
+	unsigned int div;
 	u32 value;
 	int err;
 
@@ -2095,13 +2085,20 @@ static void tegra_sor_hdmi_enable(struct drm_encoder *encoder)
 	value = SOR_REFCLK_DIV_INT(div) | SOR_REFCLK_DIV_FRAC(div);
 	tegra_sor_writel(sor, value, SOR_REFCLK);
 
-	/* XXX not in TRM */
-	for (value = 0, i = 0; i < 5; i++)
-		value |= SOR_XBAR_CTRL_LINK0_XSEL(i, sor->soc->xbar_cfg[i]) |
-			 SOR_XBAR_CTRL_LINK1_XSEL(i, i);
+	/* XXX don't hardcode */
+	value = SOR_XBAR_CTRL_LINK1_XSEL(4, 4) |
+		SOR_XBAR_CTRL_LINK1_XSEL(3, 3) |
+		SOR_XBAR_CTRL_LINK1_XSEL(2, 2) |
+		SOR_XBAR_CTRL_LINK1_XSEL(1, 1) |
+		SOR_XBAR_CTRL_LINK1_XSEL(0, 0) |
+		SOR_XBAR_CTRL_LINK0_XSEL(4, 4) |
+		SOR_XBAR_CTRL_LINK0_XSEL(3, 3) |
+		SOR_XBAR_CTRL_LINK0_XSEL(2, 0) |
+		SOR_XBAR_CTRL_LINK0_XSEL(1, 1) |
+		SOR_XBAR_CTRL_LINK0_XSEL(0, 2);
+	tegra_sor_writel(sor, value, SOR_XBAR_CTRL);
 
 	tegra_sor_writel(sor, 0x00000000, SOR_XBAR_POL);
-	tegra_sor_writel(sor, value, SOR_XBAR_CTRL);
 
 	/* switch to parent clock */
 	err = clk_set_parent(sor->clk_src, sor->clk_parent);
@@ -2477,16 +2474,11 @@ static const struct tegra_sor_ops tegra_sor_hdmi_ops = {
 	.remove = tegra_sor_hdmi_remove,
 };
 
-static const u8 tegra124_sor_xbar_cfg[5] = {
-	0, 1, 2, 3, 4
-};
-
 static const struct tegra_sor_soc tegra124_sor = {
 	.supports_edp = true,
 	.supports_lvds = true,
 	.supports_hdmi = false,
 	.supports_dp = false,
-	.xbar_cfg = tegra124_sor_xbar_cfg,
 };
 
 static const struct tegra_sor_soc tegra210_sor = {
@@ -2494,11 +2486,6 @@ static const struct tegra_sor_soc tegra210_sor = {
 	.supports_lvds = false,
 	.supports_hdmi = false,
 	.supports_dp = false,
-	.xbar_cfg = tegra124_sor_xbar_cfg,
-};
-
-static const u8 tegra210_sor_xbar_cfg[5] = {
-	2, 1, 0, 3, 4
 };
 
 static const struct tegra_sor_soc tegra210_sor1 = {
@@ -2509,8 +2496,6 @@ static const struct tegra_sor_soc tegra210_sor1 = {
 
 	.num_settings = ARRAY_SIZE(tegra210_sor_hdmi_defaults),
 	.settings = tegra210_sor_hdmi_defaults,
-
-	.xbar_cfg = tegra210_sor_xbar_cfg,
 };
 
 static const struct of_device_id tegra_sor_of_match[] = {
