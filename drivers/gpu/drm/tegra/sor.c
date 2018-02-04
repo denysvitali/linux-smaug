@@ -2349,13 +2349,10 @@ static int tegra_sor_init(struct host1x_client *client)
 	 * XXX: Remove this reset once proper hand-over from firmware to
 	 * kernel is possible.
 	 */
-	if (sor->rst) {
-		err = reset_control_assert(sor->rst);
-		if (err < 0) {
-			dev_err(sor->dev, "failed to assert SOR reset: %d\n",
-				err);
-			return err;
-		}
+	err = reset_control_assert(sor->rst);
+	if (err < 0) {
+		dev_err(sor->dev, "failed to assert SOR reset: %d\n", err);
+		return err;
 	}
 
 	err = clk_prepare_enable(sor->clk);
@@ -2366,13 +2363,10 @@ static int tegra_sor_init(struct host1x_client *client)
 
 	usleep_range(1000, 3000);
 
-	if (sor->rst) {
-		err = reset_control_deassert(sor->rst);
-		if (err < 0) {
-			dev_err(sor->dev, "failed to deassert SOR reset: %d\n",
-				err);
-			return err;
-		}
+	err = reset_control_deassert(sor->rst);
+	if (err < 0) {
+		dev_err(sor->dev, "failed to deassert SOR reset: %d\n", err);
+		return err;
 	}
 
 	err = clk_prepare_enable(sor->clk_safe);
@@ -2606,14 +2600,11 @@ static int tegra_sor_probe(struct platform_device *pdev)
 		goto remove;
 	}
 
-	if (!pdev->dev.pm_domain) {
-		sor->rst = devm_reset_control_get(&pdev->dev, "sor");
-		if (IS_ERR(sor->rst)) {
-			err = PTR_ERR(sor->rst);
-			dev_err(&pdev->dev, "failed to get reset control: %d\n",
-				err);
-			goto remove;
-		}
+	sor->rst = devm_reset_control_get(&pdev->dev, "sor");
+	if (IS_ERR(sor->rst)) {
+		err = PTR_ERR(sor->rst);
+		dev_err(&pdev->dev, "failed to get reset control: %d\n", err);
+		goto remove;
 	}
 
 	sor->clk = devm_clk_get(&pdev->dev, NULL);
@@ -2719,12 +2710,10 @@ static int tegra_sor_suspend(struct device *dev)
 	struct tegra_sor *sor = dev_get_drvdata(dev);
 	int err;
 
-	if (sor->rst) {
-		err = reset_control_assert(sor->rst);
-		if (err < 0) {
-			dev_err(dev, "failed to assert reset: %d\n", err);
-			return err;
-		}
+	err = reset_control_assert(sor->rst);
+	if (err < 0) {
+		dev_err(dev, "failed to assert reset: %d\n", err);
+		return err;
 	}
 
 	usleep_range(1000, 2000);
@@ -2747,13 +2736,11 @@ static int tegra_sor_resume(struct device *dev)
 
 	usleep_range(1000, 2000);
 
-	if (sor->rst) {
-		err = reset_control_deassert(sor->rst);
-		if (err < 0) {
-			dev_err(dev, "failed to deassert reset: %d\n", err);
-			clk_disable_unprepare(sor->clk);
-			return err;
-		}
+	err = reset_control_deassert(sor->rst);
+	if (err < 0) {
+		dev_err(dev, "failed to deassert reset: %d\n", err);
+		clk_disable_unprepare(sor->clk);
+		return err;
 	}
 
 	return 0;
