@@ -1266,7 +1266,6 @@ struct btrfs_root {
 };
 
 struct btrfs_file_private {
-	struct btrfs_trans_handle *trans;
 	void *filldir_buf;
 };
 
