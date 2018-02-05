@@ -1054,31 +1054,66 @@
 	};
 
 	cpus {
-		#address-cells = <1>;
+		#address-cells = <2>;
 		#size-cells = <0>;
 
 		cpu@0 {
 			device_type = "cpu";
-			compatible = "arm,cortex-a57";
-			reg = <0>;
+			compatible = "arm,cortex-a57", "arm,armv8";
+			reg = <0x0 0x0>;
+			enable-method = "psci";
+			clocks = <&tegra_car TEGRA210_CLK_CCLK_G>,
+				 <&tegra_car TEGRA210_CLK_CCLK_LP>,
+				 <&tegra_car TEGRA210_CLK_PLL_X>,
+				 <&tegra_car TEGRA210_CLK_PLL_P_OUT4>;
+			clock-names = "cpu_g", "cpu_lp", "pll_x", "pll_p";
+			clock-latency = <300000>;
+			cpu-idle-states = <&C7>;
+			next-level-cache = <&L2>;
 		};
 
 		cpu@1 {
 			device_type = "cpu";
-			compatible = "arm,cortex-a57";
-			reg = <1>;
+			compatible = "arm,cortex-a57", "arm,armv8";
+			reg = <0x0 0x1>;
+			enable-method = "psci";
+			cpu-idle-states = <&C7>;
+			next-level-cache = <&L2>;
 		};
 
 		cpu@2 {
 			device_type = "cpu";
-			compatible = "arm,cortex-a57";
-			reg = <2>;
+			compatible = "arm,cortex-a57", "arm,armv8";
+			reg = <0x0 0x2>;
+			enable-method = "psci";
+			cpu-idle-states = <&C7>;
+			next-level-cache = <&L2>;
 		};
 
 		cpu@3 {
 			device_type = "cpu";
-			compatible = "arm,cortex-a57";
-			reg = <3>;
+			compatible = "arm,cortex-a57", "arm,armv8";
+			reg = <0x0 0x3>;
+			enable-method = "psci";
+			cpu-idle-states = <&C7>;
+			next-level-cache = <&L2>;
+		};
+
+		idle-states {
+			enable-method = "arm,psci";
+
+			C7: c7 {
+				compatible = "arm,idle-state";
+				arm,psci-suspend-param = <0x00010007>;
+				wakeup-latency-us = <130>;
+				min-residency-us = <1000>;
+				idle-state-name = "c7-cpu-powergate";
+				status = "okay";
+			};
+		};
+
+		L2: l2-cache {
+			compatible = "cache";
 		};
 	};
 
