@@ -4,6 +4,7 @@
 #include <dt-bindings/mfd/max77620.h>
 #include <dt-bindings/gpio/tegra-gpio.h>
 #include <dt-bindings/pinctrl/pinctrl-tegra.h>
+#include <dt-bindings/soc/tegra-pmc.h>
 
 #include "tegra210.dtsi"
 
@@ -22,7 +23,7 @@
 	};
 
 	chosen {
-		bootargs = "cros_legacy console=ttyS0,115200n8 kgdboc=ttyS0 drm.atomic=1 earlycon=uart8250,mmio32,0x70006000 consoleblank=0 firmware_class.path=/lib/firmware";
+		bootargs = "vmalloc=256M video=tegrafb fbcon video=mxcfb0:dev=lcd loglevel=0 vga=current debug earlyprintk earlycon=uart8250,mmio32,0x70006000 drm.atomic=1 consoleblank=0 firmware_class.path=/lib/firmware";
 	};
 
 	memory {
@@ -67,6 +68,7 @@
 				backlight = <&backlight>;
 			};
 		};
+
 
 		sor@54540000 {
 			status = "disabled";
@@ -1915,9 +1917,28 @@
 		};
 	};
 
+	wifi: wifi_bcm4354 {
+		compatible = "brcm,bcm4354";
+		interrupt-parent = <&gpio>;
+		interrupts = <TEGRA_GPIO(H, 2) IRQ_TYPE_LEVEL_HIGH>;
+		wl_reg_on = <&gpio TEGRA_GPIO(H, 1) GPIO_ACTIVE_HIGH>;
+		wl_host_wake = <&gpio TEGRA_GPIO(H, 2) IRQ_TYPE_LEVEL_HIGH>;
+		nvidia,pmc-wakeup = <&pmc
+			PMC_WAKE_TYPE_EVENT 8 PMC_TRIGGER_TYPE_HIGH>;
+	};
+	bt_bcm4354 {
+		compatible = "brcm,bt-bcm4354";
+		bt_reg_on-gpios = <&gpio TEGRA_GPIO(H, 4) GPIO_ACTIVE_LOW>;
+		bt_host_wake-gpios = <&gpio TEGRA_GPIO(H, 5) GPIO_ACTIVE_HIGH>;
+		bt_ext_wake-gpios = <&gpio TEGRA_GPIO(H, 3) GPIO_ACTIVE_LOW>;
+		nvidia,pmc-wakeup = <&pmc
+				PMC_WAKE_TYPE_EVENT 52 PMC_TRIGGER_TYPE_HIGH>;
+	};
+
 	gpio-keys {
 		compatible = "gpio-keys";
 		gpio-keys,name = "gpio-keys";
+		status = "okay";
 
 		power {
 			label = "Power";
@@ -1954,6 +1975,7 @@
 			gpios = <&gpio TEGRA_GPIO(M, 4) GPIO_ACTIVE_LOW>;
 			linux,code = <KEY_VOLUMEUP>;
 		};
+
 	};
 
 	speaker: max98357a {
