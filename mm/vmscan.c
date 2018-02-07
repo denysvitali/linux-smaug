@@ -55,6 +55,7 @@
 
 #include <linux/swapops.h>
 #include <linux/balloon_compaction.h>
+#include <linux/frontswap.h>
 
 #include "internal.h"
 
@@ -1121,13 +1122,22 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 					if (!can_split_huge_page(page, NULL))
 						goto activate_locked;
 					/*
+					 * Split THP if frontswap enabled,
+					 * because it cannot process THP
+					 */
+					if (frontswap_enabled()) {
+						if (split_huge_page_to_list(
+							page, page_list))
+							goto activate_locked;
+					}
+					/*
 					 * Split pages without a PMD map right
 					 * away. Chances are some or all of the
 					 * tail pages can be freed without IO.
 					 */
-					if (!compound_mapcount(page) &&
-					    split_huge_page_to_list(page,
-								    page_list))
+					else if (!compound_mapcount(page) &&
+						 split_huge_page_to_list(page,
+							page_list))
 						goto activate_locked;
 				}
 				if (!add_to_swap(page)) {
