@@ -2,12 +2,11 @@ sudo: required
 services:
 - docker
 before_install:
-- docker pull dvitali/android-build-tools
-- docker run -v kernel:/kernel --entrypoint=zsh dvitali/android-build-tools:latest -c 'cd /kernel/; git clone https://github.com/denysvitali/linux-smaug;
-  cd /kernel/linux-smaug/; make -j8'
-- docker ps -a
+  - docker pull dvitali/android-build:feb-5-2
+  - docker run -v kernel:/kernel --entrypoint=zsh dvitali/android-build-tools:latest -c 'cd /kernel/; git clone https://github.com/denysvitali/linux-smaug; cd /kernel/linux-smaug/; make -j8'
+  - docker ps -a
 script:
-- sudo ls -la /var/lib/docker/volumes/kernel/_data
+  - sudo ls -la /var/lib/docker/volumes/kernel/_data
 deploy:
   provider: releases
   api_key:
