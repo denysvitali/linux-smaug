@@ -502,6 +502,7 @@ static const char * const action_page_types[] = {
 	[MF_MSG_POISONED_HUGE]		= "huge page already hardware poisoned",
 	[MF_MSG_HUGE]			= "huge page",
 	[MF_MSG_FREE_HUGE]		= "free huge page",
+	[MF_MSG_GIGANTIC]		= "gigantic page",
 	[MF_MSG_UNMAP_FAILED]		= "unmapping failed page",
 	[MF_MSG_DIRTY_SWAPCACHE]	= "dirty swapcache page",
 	[MF_MSG_CLEAN_SWAPCACHE]	= "clean swapcache page",
@@ -1082,6 +1083,12 @@ static int memory_failure_hugetlb(unsigned long pfn, int flags)
 		unlock_page(head);
 		put_hwpoison_page(head);
 		return 0;
+	}
+
+	if (hstate_is_gigantic(page_hstate(head))) {
+		action_result(pfn, MF_MSG_GIGANTIC, MF_IGNORED);
+		res = -EBUSY;
+		goto out;
 	}
 
 	if (!hwpoison_user_mappings(p, pfn, flags, &head)) {
