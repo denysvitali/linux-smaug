@@ -879,7 +879,6 @@ struct btrfs_fs_info {
 	struct rb_root tree_mod_log;
 
 	atomic_t async_delalloc_pages;
-	atomic_t open_ioctl_trans;
 
 	/*
 	 * this is used to protect the following list -- ordered_roots.
@@ -1269,7 +1268,6 @@ struct btrfs_root {
 };
 
 struct btrfs_file_private {
-	struct btrfs_trans_handle *trans;
 	void *filldir_buf;
 };
 
@@ -3213,7 +3211,6 @@ void btrfs_destroy_inode(struct inode *inode);
 int btrfs_drop_inode(struct inode *inode);
 int __init btrfs_init_cachep(void);
 void btrfs_destroy_cachep(void);
-long btrfs_ioctl_trans_end(struct file *file);
 struct inode *btrfs_iget(struct super_block *s, struct btrfs_key *location,
 			 struct btrfs_root *root, int *was_new);
 struct extent_map *btrfs_get_extent(struct btrfs_inode *inode,
