@@ -2,7 +2,7 @@ sudo: required
 services:
 - docker
 before_install:
-  - docker run -v kernel:/kernel --entrypoint=zsh dvitali/android-build:feb-5-2 -c 'cd /kernel/; git clone https://github.com/denysvitali/linux-smaug; cd /kernel/linux-smaug/; ./getvendor.sh && make -j8 && ./build-image.sh'
+  - docker run -v kernel:/kernel --entrypoint=zsh dvitali/android-build:feb-5-2 -c 'git clone https://github.com/denysvitali/linux-smaug; cd linux-smaug; ./docker-init.sh; ./getvendor.sh && make -j8 && ./build-image.sh'
   - docker ps -a
 script:
   - sudo ls -la /var/lib/docker/volumes/kernel/_data
@@ -14,4 +14,5 @@ deploy:
 
   on:
     repo: denysvitali/linux-smaug
-    branch: linux-4.14-rc3
+    tags: true
+    all_branches: true
