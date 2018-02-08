@@ -2335,10 +2335,6 @@ again:
 
 		printk_safe_enter_irqsave(flags);
 		raw_spin_lock(&logbuf_lock);
-		if (seen_seq != log_next_seq) {
-			wake_klogd = true;
-			seen_seq = log_next_seq;
-		}
 
 		if (console_seq < log_first_seq) {
 			len = sprintf(text, "** %u printk messages dropped **\n",
@@ -2417,12 +2413,17 @@ skip:
 	up_console_sem();
 
 	/*
-	 * Someone could have filled up the buffer again, so re-check if there's
-	 * something to flush. In case we cannot trylock the console_sem again,
-	 * there's a new owner and the console_unlock() from them will do the
-	 * flush, no worries.
+	 * Check whether userland needs notification.  Also, someone could
+	 * have filled up the buffer again, so re-check if there's
+	 * something to flush. In case we cannot trylock the console_sem
+	 * again, there's a new owner and the console_unlock() from them
+	 * will do the flush, no worries.
 	 */
 	raw_spin_lock(&logbuf_lock);
+	if (seen_seq != log_next_seq) {
+		wake_klogd = true;
+		seen_seq = log_next_seq;
+	}
 	retry = console_seq != log_next_seq;
 	raw_spin_unlock(&logbuf_lock);
 	printk_safe_exit_irqrestore(flags);
