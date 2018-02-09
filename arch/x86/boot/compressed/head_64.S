@@ -33,6 +33,7 @@
 #include <asm/processor-flags.h>
 #include <asm/asm-offsets.h>
 #include <asm/bootparam.h>
+#include "pgtable.h"
 
 /*
  * Locally defined symbols should be marked hidden:
@@ -355,6 +356,17 @@ ENTRY(startup_64)
 	lretq
 lvl5:
 
+	/*
+	 * cleanup_trampoline() would restore trampoline memory.
+	 *
+	 * RSI holds real mode data and needs to be preserved across
+	 * this function call.
+	 */
+	pushq	%rsi
+	movq	%rcx, %rdi
+	call	cleanup_trampoline
+	popq	%rsi
+
 	/* Zero EFLAGS */
 	pushq	$0
 	popfq
@@ -491,8 +503,9 @@ relocated:
 	jmp	*%rax
 
 	.code32
+ENTRY(trampoline_32bit_src)
 compatible_mode:
-	/* Setup data and stack segments */
+	/* Set up data and stack segments */
 	movl	$__KERNEL_DS, %eax
 	movl	%eax, %ds
 	movl	%eax, %ss
@@ -577,6 +590,11 @@ boot_stack:
 	.fill BOOT_STACK_SIZE, 1, 0
 boot_stack_end:
 
+/* Space to preserve trampoline memory */
+	.global trampoline_save
+trampoline_save:
+	.fill TRAMPOLINE_32BIT_SIZE, 1, 0
+
 /*
  * Space for page tables (not in .bss so not zeroed)
  */
@@ -586,3 +604,7 @@ pgtable:
 	.fill BOOT_PGT_SIZE, 1, 0
 lvl5_pgtable:
 	.fill PAGE_SIZE, 1, 0
+
+	.global pgtable_trampoline
+pgtable_trampoline:
+	.fill 4096, 1, 0
