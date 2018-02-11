@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
 /dts-v1/;
 
+#include <dt-bindings/input/linux-event-codes.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/mfd/max77620.h>
+#include <dt-bindings/gpio/tegra-gpio.h>
 #include <dt-bindings/pinctrl/pinctrl-tegra.h>
 
 #include "tegra210.dtsi"
@@ -16,30 +18,96 @@
 		     "google,smaug", "nvidia,tegra210";
 
 	aliases {
+		rtc0 = "/i2c@7000d000/pmic@3c";
+		rtc1 = "/rtc@7000e000";
 		serial0 = &uarta;
+		serial1 = &uartc;
+		serial2 = &uartd;
 	};
 
 	chosen {
-		bootargs = "earlycon";
-		stdout-path = "serial0:115200n8";
+		bootargs = "cros_legacy init=/init rw fbcon loglevel=0 debug earlyprintk drm.atomic=1 no_console_suspend firmware_class.path=/lib/firmware";
 	};
 
 	memory {
 		device_type = "memory";
-		reg = <0x0 0x80000000 0x0 0xc0000000>;
+		reg = < 0x0 0x80000000 0x0 0x7d200000 >,
+		      < 0x1 0x00000000 0x0 0x40000000 >;
 	};
 
 	host1x@50000000 {
-		dpaux: dpaux@545c0000 {
+
+		dsia: dsi@54300000 {
+			status = "okay";
+			avdd-dsi-csi-supply = <&pp1200_avdd>;
+			#address-cells = <2>;
+			#size-cells = <2>;
+			secondary: panel@0 {
+				compatible = "jdi,lpm102a188a";
+				reg = <0x0 0 0x0 0>;
+			};
+		};
+
+		dc@54240000 {
 			status = "okay";
 		};
+
+		dsib: dsi@54400000 {
+			status = "okay";
+			avdd-dsi-csi-supply = <&pp1200_avdd>;
+			nvidia,ganged-mode = <&dsia>;
+			#address-cells = <2>;
+			#size-cells = <2>;
+			lcdc0: panel@0 {
+				compatible = "jdi,lpm102a188a";
+				reg = <0x0 0 0x0 0>;
+				power-supply = <&pplcd_vdd>;
+				ddi-supply = <&pp1800_lcdio>;
+				enable-gpio = <&gpio TEGRA_GPIO(V, 1) GPIO_ACTIVE_HIGH>;
+				reset-gpio = <&gpio TEGRA_GPIO(V, 2) GPIO_ACTIVE_LOW>;
+				link2 = <&secondary>;
+				backlight = <&backlight>;
+			};
+		};
+		sor@54540000 {
+			status = "disabled";
+		};
+		sor@54580000 {
+			status = "disabled";
+		};
+		dpaux@54040000 {
+			status = "disabled";
+			vdd-supply = <&pp3300>;
+		};
+		dpaux@545c0000 {
+			status = "okay";
+			vdd-supply = <&pp3300>;
+		};
+		i2c@546c0000 {
+			status = "disabled";
+		};
+	};
+	gpu@57000000 {
+		status = "okay";
+		vdd-supply = <&max77621_gpu>;
 	};
 
+	serial@70006000 {
+		status = "okay";
+	};
+	serial@70006200 {
+		compatible = "nvidia,tegra210-hsuart", "nvidia,tegra30-hsuart";
+		status = "okay";
+	};
+	serial@70006300 {
+		compatible = "nvidia,tegra124-hsuart", "nvidia,tegra30-hsuart";
+		status = "okay";
+	};
 	pinmux: pinmux@700008d4 {
-		pinctrl-names = "boot";
-		pinctrl-0 = <&state_boot>;
+		pinctrl-names = "bootloader";
+		pinctrl-0 = <&pinmux_boot>;
 
-		state_boot: pinmux {
+		pinmux_boot: pinmux {
 			pex_l0_rst_n_pa0 {
 				nvidia,pins = "pex_l0_rst_n_pa0";
 				nvidia,function = "rsvd1";
@@ -1309,6 +1377,20 @@
 		status = "okay";
 	};
 
+	i2c@7000c000 {
+		status = "okay";
+		clock-frequency = <1000000>;
+
+		touchscreen: i2c-hid-dev@20 {
+				compatible = "hid-over-i2c";
+				reg = <0x20>;
+				status = "okay";
+				hid-descr-addr = <0x0020>;
+				interrupt-parent = <&gpio>;
+				interrupts = <TEGRA_GPIO(X, 1) IRQ_TYPE_EDGE_FALLING>;
+		};
+	};
+
 	i2c@7000c400 {
 		status = "okay";
 		clock-frequency = <1000000>;
@@ -1333,6 +1415,21 @@
 					battery-name = "battery";
 				};
 			};
+			usbc_extcon: extcon {
+				compatible = "google,extcon-usbc-cros-ec";
+				google,usb-port-id = <0>;
+			};
+		};
+	};
+
+	i2c@7000c500 {
+		status = "okay";
+		clock-frequency = <400000>;
+		tpm@20 {
+			compatible = "infineon,slb9645tt";
+			reg = <0x20>;
+			powered-while-suspended;
+			status = "okay";
 		};
 	};
 
@@ -1562,6 +1659,37 @@
 				};
 			};
 		};
+
+		max77621_cpu: pmic@1b {
+				compatible = "maxim,max77621";
+				reg = <0x1b>;
+				regulator-name = "PPVAR_CPU";
+				regulator-min-microvolt = <850000>;
+				regulator-max-microvolt = <1170000>;
+				regulator-ramp-delay = <12500>;
+				maxim,externally-enable;
+				maxim,enable-gpio = <&max77620 5 0>;
+				maxim,dvs-default-state = <1>;
+				regulator-always-on;
+				maxim,enable-active-discharge;
+				maxim,enable-bias-control;
+				maxim,enable-etr;
+		};
+
+		max77621_gpu: pmic@1c {
+				compatible = "maxim,max77621";
+				reg = <0x1c>;
+				regulator-name = "PPVAR_GPU";
+				regulator-min-microvolt = <840000>;
+				regulator-max-microvolt = <1150000>;
+				regulator-ramp-delay = <12500>;
+				maxim,externally-enable;
+				maxim,enable-gpio = <&max77620 6 0>;
+				maxim,dvs-default-state = <1>;
+				maxim,disable-etr;
+				maxim,enable-active-discharge;
+				maxim,enable-bias-control;
+		};
 	};
 
 	i2c@7000d100 {
@@ -1589,7 +1717,38 @@
 			nuvoton,short-key-debounce = <2>;
 			nuvoton,jack-insert-debounce = <7>;
 			nuvoton,jack-eject-debounce = <7>;
-			status = "okay";
+			status = "disabled";
+		};
+
+		backlight: lp8557-backlight@2c {
+				status = "okay";
+				compatible = "ti,lp8557";
+				reg = <0x2c>;
+				power-supply = <&pplcd_vdd>;
+				enable-supply = <&pp1800_lcdio>;
+				bl-name = "lp8557-backlight";
+				dev-ctrl = /bits/ 8 <0x01>;
+				init-brt = /bits/ 8 <0xFF>;
+				/* Full scale current, 20mA */
+				rom_11h {
+						rom-addr = /bits/ 8 <0x11>;
+						rom-val = /bits/ 8 <0x05>;
+				};
+				/* Frequency = 4.9kHz, magic undocumented val */
+				rom_12h {
+						rom-addr = /bits/ 8 <0x12>;
+						rom-val = /bits/ 8 <0x29>;
+				};
+				/* Boost freq = 1MHz, BComp option = 1 */
+				rom_13h {
+						rom-addr = /bits/ 8 <0x13>;
+						rom-val = /bits/ 8 <0x03>;
+				};
+				/* 4V OV, 6 output LED string enabled */
+				rom_14h {
+						rom-addr = /bits/ 8 <0x14>;
+						rom-val = /bits/ 8 <0xbf>;
+				};
 		};
 
 		audio-codec@2d {
@@ -1600,7 +1759,25 @@
 			realtek,reset-gpio = <&gpio TEGRA_GPIO(BB, 3) GPIO_ACTIVE_LOW>;
 			gpio-controller;
 			#gpio-cells = <2>;
+			// TODO: Add more?
+			// See: Documentation/devicetree/bindings/sound/rt5677.txt
+			status = "disabled";
+		};
+
+		audio-jack@3b {
+			// TODO: Describe TI TS3A227E
+			reg = <0x3b>;
+			status = "disabled";
+		};
+
+		tmp451: temperature-sensor@4c {
 			status = "okay";
+			compatible = "ti,tmp451";
+			reg = <0x4c>;
+			interrupt-parent = <&gpio>;
+			interrupts = <TEGRA_GPIO(X, 4) IRQ_TYPE_LEVEL_LOW>;
+			vcc-supply = <&pp1800>;
+			#thermal-sensor-cells = <1>;
 		};
 	};
 
@@ -1673,9 +1850,20 @@
 		};
 	};
 
+	sdhci@700b0200 { /* WiFi/BT on this bus */
+		power-gpios = <&gpio TEGRA_GPIO(H, 1) GPIO_ACTIVE_HIGH>;
+		vmmc-supply = <&pp3300>;
+		no-1-8-v;
+		bus-width = <4>;
+		keep-power-in-suspend;
+		non-removable;
+		status = "disabled";
+	};
+
 	sdhci@700b0600 {
 		bus-width = <8>;
 		non-removable;
+		vmmc-supply = <&pp3300>;
 		status = "okay";
 	};
 
@@ -1706,6 +1894,7 @@
 
 	cpus {
 		cpu@0 {
+			vdd-cpu-supply = <&max77621_cpu>;
 			enable-method = "psci";
 		};
 
@@ -1724,7 +1913,8 @@
 
 	gpio-keys {
 		compatible = "gpio-keys";
-		gpio-keys,name = "gpio-keys";
+	/*	gpio-keys,name = "gpio-keys";*/
+		status = "okay";
 
 		power {
 			label = "Power";
@@ -1769,13 +1959,13 @@
 	};
 
 	psci {
-		compatible = "arm,psci-1.0";
+		compatible = "arm,psci-0.2";
 		method = "smc";
 	};
 
 	regulators {
 		compatible = "simple-bus";
-		device_type = "fixed-regulators";
+	/*	device_type = "fixed-regulators";*/
 		#address-cells = <1>;
 		#size-cells = <0>;
 
@@ -1794,7 +1984,7 @@
 			regulator-name = "PPLCD_VDD";
 			regulator-min-microvolt = <4400000>;
 			regulator-max-microvolt = <4400000>;
-			gpio = <&gpio TEGRA_GPIO(V, 4) 0>;
+			gpio = <&gpio TEGRA_GPIO(V, 4) GPIO_ACTIVE_LOW>;
 			enable-active-high;
 			regulator-boot-on;
 		};
@@ -1834,7 +2024,7 @@
 			regulator-name = "PP1800_LCDIO";
 			regulator-min-microvolt = <1800000>;
 			regulator-max-microvolt = <1800000>;
-			gpio = <&gpio TEGRA_GPIO(V, 3) 0>;
+			gpio = <&gpio TEGRA_GPIO(V, 3) GPIO_ACTIVE_LOW>;
 			enable-active-high;
 			regulator-boot-on;
 		};
@@ -1845,7 +2035,7 @@
 			regulator-name = "PP1800_CAM";
 			regulator-min-microvolt = <1800000>;
 			regulator-max-microvolt = <1800000>;
-			gpio = <&gpio TEGRA_GPIO(K, 3) 0>;
+			gpio = <&gpio TEGRA_GPIO(K, 3) GPIO_ACTIVE_LOW>;
 			enable-active-high;
 		};
 
