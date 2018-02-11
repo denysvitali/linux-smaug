@@ -162,7 +162,7 @@ static int panel_jdi_unprepare(struct drm_panel *panel)
 	struct panel_jdi *jdi = to_panel_jdi(panel);
 	int ret;
 
-	if (!jdi->enabled)
+	if (!jdi->prepared)
 		return 0;
 
 	jdi_wait_frames(jdi, 2);
@@ -206,7 +206,7 @@ static int panel_jdi_unprepare(struct drm_panel *panel)
 
 	regulator_disable(jdi->ddi_supply);
 
-	jdi->enabled = false;
+	jdi->prepared = false;
 
 	return 0;
 }
@@ -251,7 +251,7 @@ static int panel_jdi_prepare(struct drm_panel *panel)
 	u8 format = MIPI_DCS_PIXEL_FMT_24BIT;
 	int err;
 
-	if (jdi->enabled)
+	if (jdi->prepared)
 		return 0;
 
 
@@ -406,7 +406,7 @@ static int panel_jdi_prepare(struct drm_panel *panel)
 		goto poweroff;
 	}
 
-	jdi->enabled = true;
+	jdi->prepared = true;
 
 	/* wait for 6 frames before continuing */
 	jdi_wait_frames(jdi, 6);
