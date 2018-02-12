@@ -178,7 +178,7 @@
 			clock-names = "dsi", "lp", "parent";
 			resets = <&tegra_car 48>;
 			reset-names = "dsi";
-			power-domains = <&pd_sor>;
+		/*	power-domains = <&pd_sor>;*/
 			nvidia,mipi-calibrate = <&mipi 0x0c0>; /* DSIA & DSIB pads */
 
 			status = "disabled";
@@ -215,7 +215,7 @@
 			clock-names = "dsi", "lp", "parent";
 			resets = <&tegra_car 82>;
 			reset-names = "dsi";
-			power-domains = <&pd_sor>;
+/*			power-domains = <&pd_sor>;*/
 			nvidia,mipi-calibrate = <&mipi 0x300>; /* DSIC & DSID pads */
 
 			status = "disabled";
@@ -739,11 +739,9 @@
 					 <&tegra_car TEGRA210_CLK_DPAUX>,
 					 <&tegra_car TEGRA210_CLK_DPAUX1>,
 					 <&tegra_car TEGRA210_CLK_MIPI_CAL>;
-				resets = <&tegra_car TEGRA210_CLK_SOR0>,
-					 <&tegra_car TEGRA210_CLK_SOR1>,
-					 <&tegra_car TEGRA210_CLK_CSI>,
-					 <&tegra_car TEGRA210_CLK_DSIA>,
-					 <&tegra_car TEGRA210_CLK_DSIB>,
+				resets = <&tegra_car TEGRA210_CLK_CSI>,
+				/*	 <&tegra_car TEGRA210_CLK_DSIA>,
+					 <&tegra_car TEGRA210_CLK_DSIB>,*/
 					 <&tegra_car TEGRA210_CLK_DPAUX>,
 					 <&tegra_car TEGRA210_CLK_DPAUX1>,
 					 <&tegra_car TEGRA210_CLK_MIPI_CAL>;
