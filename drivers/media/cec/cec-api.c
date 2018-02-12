@@ -43,23 +43,23 @@ static inline struct cec_devnode *cec_devnode_data(struct file *filp)
 
 /* CEC file operations */
 
-static unsigned int cec_poll(struct file *filp,
+static __poll_t cec_poll(struct file *filp,
 			     struct poll_table_struct *poll)
 {
 	struct cec_fh *fh = filp->private_data;
 	struct cec_adapter *adap = fh->adap;
-	unsigned int res = 0;
+	__poll_t res = 0;
 
 	if (!cec_is_registered(adap))
-		return POLLERR | POLLHUP;
+		return EPOLLERR | EPOLLHUP;
 	mutex_lock(&adap->lock);
 	if (adap->is_configured &&
 	    adap->transmit_queue_sz < CEC_MAX_MSG_TX_QUEUE_SZ)
-		res |= POLLOUT | POLLWRNORM;
+		res |= EPOLLOUT | EPOLLWRNORM;
 	if (fh->queued_msgs)
-		res |= POLLIN | POLLRDNORM;
+		res |= EPOLLIN | EPOLLRDNORM;
 	if (fh->total_queued_events)
-		res |= POLLPRI;
+		res |= EPOLLPRI;
 	poll_wait(filp, &fh->wait, poll);
 	mutex_unlock(&adap->lock);
 	return res;

@@ -521,14 +521,14 @@ err:
 	return ret;
 }
 
-static unsigned int hdpvr_poll(struct file *filp, poll_table *wait)
+static __poll_t hdpvr_poll(struct file *filp, poll_table *wait)
 {
-	unsigned long req_events = poll_requested_events(wait);
+	__poll_t req_events = poll_requested_events(wait);
 	struct hdpvr_buffer *buf = NULL;
 	struct hdpvr_device *dev = video_drvdata(filp);
-	unsigned int mask = v4l2_ctrl_poll(filp, wait);
+	__poll_t mask = v4l2_ctrl_poll(filp, wait);
 
-	if (!(req_events & (POLLIN | POLLRDNORM)))
+	if (!(req_events & (EPOLLIN | EPOLLRDNORM)))
 		return mask;
 
 	mutex_lock(&dev->io_mutex);
@@ -553,7 +553,7 @@ static unsigned int hdpvr_poll(struct file *filp, poll_table *wait)
 		buf = hdpvr_get_next_buffer(dev);
 	}
 	if (buf && buf->status == BUFSTAT_READY)
-		mask |= POLLIN | POLLRDNORM;
+		mask |= EPOLLIN | EPOLLRDNORM;
 
 	return mask;
 }

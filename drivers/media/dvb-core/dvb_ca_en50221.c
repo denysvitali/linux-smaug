@@ -1785,18 +1785,18 @@ static int dvb_ca_en50221_io_release(struct inode *inode, struct file *file)
  *
  * return: Standard poll mask.
  */
-static unsigned int dvb_ca_en50221_io_poll(struct file *file, poll_table *wait)
+static __poll_t dvb_ca_en50221_io_poll(struct file *file, poll_table *wait)
 {
 	struct dvb_device *dvbdev = file->private_data;
 	struct dvb_ca_private *ca = dvbdev->priv;
-	unsigned int mask = 0;
+	__poll_t mask = 0;
 	int slot;
 	int result = 0;
 
 	dprintk("%s\n", __func__);
 
 	if (dvb_ca_en50221_io_read_condition(ca, &result, &slot) == 1)
-		mask |= POLLIN;
+		mask |= EPOLLIN;
 
 	/* if there is something, return now */
 	if (mask)
@@ -1806,7 +1806,7 @@ static unsigned int dvb_ca_en50221_io_poll(struct file *file, poll_table *wait)
 	poll_wait(file, &ca->wait_queue, wait);
 
 	if (dvb_ca_en50221_io_read_condition(ca, &result, &slot) == 1)
-		mask |= POLLIN;
+		mask |= EPOLLIN;
 
 	return mask;
 }

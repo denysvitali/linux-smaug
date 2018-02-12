@@ -1869,22 +1869,22 @@ out:
 	return ret;
 }
 
-static unsigned int dev_poll(struct file *file, poll_table *wait)
+static __poll_t dev_poll(struct file *file, poll_table *wait)
 {
 	struct gspca_dev *gspca_dev = video_drvdata(file);
-	unsigned long req_events = poll_requested_events(wait);
-	int ret = 0;
+	__poll_t req_events = poll_requested_events(wait);
+	__poll_t ret = 0;
 
 	gspca_dbg(gspca_dev, D_FRAM, "poll\n");
 
-	if (req_events & POLLPRI)
+	if (req_events & EPOLLPRI)
 		ret |= v4l2_ctrl_poll(file, wait);
 
-	if (req_events & (POLLIN | POLLRDNORM)) {
+	if (req_events & (EPOLLIN | EPOLLRDNORM)) {
 		/* if reqbufs is not done, the user would use read() */
 		if (gspca_dev->memory == GSPCA_MEMORY_NO) {
 			if (read_alloc(gspca_dev, file) != 0) {
-				ret |= POLLERR;
+				ret |= EPOLLERR;
 				goto out;
 			}
 		}
@@ -1893,17 +1893,17 @@ static unsigned int dev_poll(struct file *file, poll_table *wait)
 
 		/* check if an image has been received */
 		if (mutex_lock_interruptible(&gspca_dev->queue_lock) != 0) {
-			ret |= POLLERR;
+			ret |= EPOLLERR;
 			goto out;
 		}
 		if (gspca_dev->fr_o != atomic_read(&gspca_dev->fr_i))
-			ret |= POLLIN | POLLRDNORM;
+			ret |= EPOLLIN | EPOLLRDNORM;
 		mutex_unlock(&gspca_dev->queue_lock);
 	}
 
 out:
 	if (!gspca_dev->present)
-		ret |= POLLHUP;
+		ret |= EPOLLHUP;
 
 	return ret;
 }

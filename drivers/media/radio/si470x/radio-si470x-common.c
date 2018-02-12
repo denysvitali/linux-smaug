@@ -507,14 +507,14 @@ done:
 /*
  * si470x_fops_poll - poll RDS data
  */
-static unsigned int si470x_fops_poll(struct file *file,
+static __poll_t si470x_fops_poll(struct file *file,
 		struct poll_table_struct *pts)
 {
 	struct si470x_device *radio = video_drvdata(file);
-	unsigned long req_events = poll_requested_events(pts);
-	int retval = v4l2_ctrl_poll(file, pts);
+	__poll_t req_events = poll_requested_events(pts);
+	__poll_t retval = v4l2_ctrl_poll(file, pts);
 
-	if (req_events & (POLLIN | POLLRDNORM)) {
+	if (req_events & (EPOLLIN | EPOLLRDNORM)) {
 		/* switch on rds reception */
 		if ((radio->registers[SYSCONFIG1] & SYSCONFIG1_RDS) == 0)
 			si470x_rds_on(radio);
@@ -522,7 +522,7 @@ static unsigned int si470x_fops_poll(struct file *file,
 		poll_wait(file, &radio->read_queue, pts);
 
 		if (radio->rd_index != radio->wr_index)
-			retval |= POLLIN | POLLRDNORM;
+			retval |= EPOLLIN | EPOLLRDNORM;
 	}
 
 	return retval;

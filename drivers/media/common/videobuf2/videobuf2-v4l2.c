@@ -658,7 +658,7 @@ int vb2_queue_init(struct vb2_queue *q)
 			== V4L2_BUF_FLAG_TIMESTAMP_COPY;
 	/*
 	 * For compatibility with vb1: if QBUF hasn't been called yet, then
-	 * return POLLERR as well. This only affects capture queues, output
+	 * return EPOLLERR as well. This only affects capture queues, output
 	 * queues will always initialize waiting_for_buffers to false.
 	 */
 	q->quirk_poll_must_check_waiting_for_buffers = true;
@@ -673,18 +673,18 @@ void vb2_queue_release(struct vb2_queue *q)
 }
 EXPORT_SYMBOL_GPL(vb2_queue_release);
 
-unsigned int vb2_poll(struct vb2_queue *q, struct file *file, poll_table *wait)
+__poll_t vb2_poll(struct vb2_queue *q, struct file *file, poll_table *wait)
 {
 	struct video_device *vfd = video_devdata(file);
-	unsigned long req_events = poll_requested_events(wait);
-	unsigned int res = 0;
+	__poll_t req_events = poll_requested_events(wait);
+	__poll_t res = 0;
 
 	if (test_bit(V4L2_FL_USES_V4L2_FH, &vfd->flags)) {
 		struct v4l2_fh *fh = file->private_data;
 
 		if (v4l2_event_pending(fh))
-			res = POLLPRI;
-		else if (req_events & POLLPRI)
+			res = EPOLLPRI;
+		else if (req_events & EPOLLPRI)
 			poll_wait(file, &fh->wait, wait);
 	}
 
@@ -906,12 +906,12 @@ exit:
 }
 EXPORT_SYMBOL_GPL(vb2_fop_read);
 
-unsigned int vb2_fop_poll(struct file *file, poll_table *wait)
+__poll_t vb2_fop_poll(struct file *file, poll_table *wait)
 {
 	struct video_device *vdev = video_devdata(file);
 	struct vb2_queue *q = vdev->queue;
 	struct mutex *lock = q->lock ? q->lock : vdev->lock;
-	unsigned res;
+	__poll_t res;
 	void *fileio;
 
 	/*
@@ -921,7 +921,7 @@ unsigned int vb2_fop_poll(struct file *file, poll_table *wait)
 	WARN_ON(!lock);
 
 	if (lock && mutex_lock_interruptible(lock))
-		return POLLERR;
+		return EPOLLERR;
 
 	fileio = q->fileio;
 
