@@ -1902,7 +1902,7 @@ static const struct tegra_dc_soc_info tegra210_dc_soc_info = {
 	.supports_cursor = true,
 	.supports_block_linear = true,
 	.pitch_align = 64,
-	.has_powergate = false,
+	.has_powergate = true,
 	.broken_reset = false,
 };
 
