@@ -771,6 +771,8 @@ static int mcp23s08_probe_one(struct mcp23s08 *mcp, struct device *dev,
 {
 	int status, ret;
 	bool mirror = false;
+	struct regmap_config *one_regmap_config = NULL;
+	int raw_chip_address = (addr & ~0x40) >> 1;
 
 	mutex_init(&mcp->lock);
 
@@ -791,22 +793,38 @@ static int mcp23s08_probe_one(struct mcp23s08 *mcp, struct device *dev,
 	switch (type) {
 #ifdef CONFIG_SPI_MASTER
 	case MCP_TYPE_S08:
-		mcp->regmap = devm_regmap_init(dev, &mcp23sxx_spi_regmap, mcp,
-					       &mcp23x08_regmap);
-		mcp->reg_shift = 0;
-		mcp->chip.ngpio = 8;
-		mcp->chip.label = "mcp23s08";
-		break;
-
 	case MCP_TYPE_S17:
+		switch (type) {
+		case MCP_TYPE_S08:
+			one_regmap_config =
+				devm_kmemdup(dev, &mcp23x08_regmap,
+					sizeof(struct regmap_config), GFP_KERNEL);
+			mcp->reg_shift = 0;
+			mcp->chip.ngpio = 8;
+			mcp->chip.label = devm_kasprintf(dev, GFP_KERNEL,
+					"mcp23s08.%d", raw_chip_address);
+			break;
+		case MCP_TYPE_S17:
+			one_regmap_config =
+				devm_kmemdup(dev, &mcp23x17_regmap,
+					sizeof(struct regmap_config), GFP_KERNEL);
+			mcp->reg_shift = 1;
+			mcp->chip.ngpio = 16;
+			mcp->chip.label = devm_kasprintf(dev, GFP_KERNEL,
+					"mcp23s17.%d", raw_chip_address);
+			break;
+		}
+		if (!one_regmap_config)
+			return -ENOMEM;
+
+		one_regmap_config->name = devm_kasprintf(dev, GFP_KERNEL, "%d", raw_chip_address);
 		mcp->regmap = devm_regmap_init(dev, &mcp23sxx_spi_regmap, mcp,
-					       &mcp23x17_regmap);
-		mcp->reg_shift = 1;
-		mcp->chip.ngpio = 16;
-		mcp->chip.label = "mcp23s17";
+					       one_regmap_config);
 		break;
 
 	case MCP_TYPE_S18:
+		if (!one_regmap_config)
+			return -ENOMEM;
 		mcp->regmap = devm_regmap_init(dev, &mcp23sxx_spi_regmap, mcp,
 					       &mcp23x17_regmap);
 		mcp->reg_shift = 1;
@@ -900,7 +918,14 @@ static int mcp23s08_probe_one(struct mcp23s08 *mcp, struct device *dev,
 	if (ret < 0)
 		goto fail;
 
-	mcp->pinctrl_desc.name = "mcp23xxx-pinctrl";
+	if (one_regmap_config) {
+		mcp->pinctrl_desc.name = devm_kasprintf(dev, GFP_KERNEL,
+				"mcp23xxx-pinctrl.%d", raw_chip_address);
+		if (!mcp->pinctrl_desc.name)
+			return -ENOMEM;
+	} else {
+		mcp->pinctrl_desc.name = "mcp23xxx-pinctrl";
+	}
 	mcp->pinctrl_desc.pctlops = &mcp_pinctrl_ops;
 	mcp->pinctrl_desc.confops = &mcp_pinconf_ops;
 	mcp->pinctrl_desc.npins = mcp->chip.ngpio;
