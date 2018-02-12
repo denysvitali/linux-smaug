@@ -9,6 +9,7 @@
 #ifndef __SOC_TEGRA_MC_H__
 #define __SOC_TEGRA_MC_H__
 
+#include <linux/reset-controller.h>
 #include <linux/types.h>
 
 struct clk;
@@ -86,6 +87,14 @@ static inline void tegra_smmu_remove(struct tegra_smmu *smmu)
 }
 #endif
 
+struct tegra_mc_reset {
+	const char *name;
+	unsigned long id;
+	unsigned int control;
+	unsigned int status;
+	unsigned int bit;
+};
+
 struct tegra_mc_soc {
 	const struct tegra_mc_client *clients;
 	unsigned int num_clients;
@@ -99,6 +108,9 @@ struct tegra_mc_soc {
 	u8 client_id_mask;
 
 	const struct tegra_smmu_soc *smmu;
+
+	const struct tegra_mc_reset *resets;
+	unsigned int num_resets;
 };
 
 struct tegra_mc {
@@ -106,7 +118,10 @@ struct tegra_mc {
 	struct tegra_smmu *smmu;
 	void __iomem *regs;
 	struct clk *clk;
+	spinlock_t lock;
 	int irq;
+
+	struct reset_controller_dev reset;
 
 	const struct tegra_mc_soc *soc;
 	unsigned long tick;
