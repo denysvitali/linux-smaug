@@ -7,6 +7,7 @@
  */
 
 #include <linux/clk.h>
+#include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -269,6 +270,14 @@ static int tegra_mc_reset_assert(struct reset_controller_dev *rcdev,
 	mc_writel(mc, value, reset->control);
 
 	spin_unlock_irqrestore(&mc->lock, flags);
+
+	while (1) {
+		value = mc_readl(mc, reset->status);
+		if (value & BIT(reset->bit))
+			break;
+
+		usleep_range(20, 100);
+	}
 
 out:
 	dev_dbg(mc->dev, "< %s() = %d\n", __func__, err);
