@@ -1501,6 +1501,8 @@ static int tegra_dsi_probe(struct platform_device *pdev)
 			return PTR_ERR(dsi->rst);
 	}
 
+	reset_control_assert(dsi->rst);
+
 	dsi->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(dsi->clk)) {
 		dev_err(&pdev->dev, "cannot get DSI clock\n");
