@@ -18,6 +18,7 @@
 #include <linux/pm_domain.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
+#include <linux/slab.h>
 
 #define GPC_CNTR		0x000
 
@@ -254,6 +255,7 @@ static struct imx_pm_domain imx_gpc_domains[] = {
 	{
 		.base = {
 			.name = "ARM",
+			.flags = GENPD_FLAG_ALWAYS_ON,
 		},
 	}, {
 		.base = {
@@ -442,13 +444,19 @@ static int imx_gpc_probe(struct platform_device *pdev)
 			if (domain_index >= of_id_data->num_domains)
 				continue;
 
-			domain = &imx_gpc_domains[domain_index];
+			domain = kmalloc(sizeof(*domain), GFP_KERNEL);
+			if (!domain) {
+				of_node_put(np);
+				return -ENOMEM;
+			}
+			memcpy(domain, &imx_gpc_domains[domain_index], sizeof(*domain));
 			domain->regmap = regmap;
 			domain->ipg_rate_mhz = ipg_rate_mhz;
 
 			pd_pdev = platform_device_alloc("imx-pgc-power-domain",
 							domain_index);
 			if (!pd_pdev) {
+				kfree(domain);
 				of_node_put(np);
 				return -ENOMEM;
 			}

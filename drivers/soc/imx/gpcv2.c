@@ -18,6 +18,7 @@
 #include <linux/pm_domain.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
+#include <linux/slab.h>
 #include <dt-bindings/power/imx7-power.h>
 
 #define GPC_LPCR_A7_BSC			0x000
@@ -155,7 +156,7 @@ static int imx7_gpc_pu_pgc_sw_pdn_req(struct generic_pm_domain *genpd)
 	return imx7_gpc_pu_pgc_sw_pxx_req(genpd, false);
 }
 
-static struct imx7_pgc_domain imx7_pgc_domains[] = {
+static const struct imx7_pgc_domain imx7_pgc_domains[] = {
 	[IMX7_POWER_DOMAIN_MIPI_PHY] = {
 		.genpd = {
 			.name      = "mipi-phy",
@@ -321,7 +322,14 @@ static int imx_gpcv2_probe(struct platform_device *pdev)
 			continue;
 		}
 
-		domain = &imx7_pgc_domains[domain_index];
+		domain = kmalloc(sizeof(*domain), GFP_KERNEL);
+		if (!domain) {
+			of_node_put(np);
+			return -ENOMEM;
+		}
+		memcpy(domain, &imx7_pgc_domains[domain_index],
+		       sizeof(*domain));
+
 		domain->regmap = regmap;
 		domain->genpd.power_on  = imx7_gpc_pu_pgc_sw_pup_req;
 		domain->genpd.power_off = imx7_gpc_pu_pgc_sw_pdn_req;
@@ -330,6 +338,7 @@ static int imx_gpcv2_probe(struct platform_device *pdev)
 						domain_index);
 		if (!pd_pdev) {
 			dev_err(dev, "Failed to allocate platform device\n");
+			kfree(domain);
 			of_node_put(np);
 			return -ENOMEM;
 		}
