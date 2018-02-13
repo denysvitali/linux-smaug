@@ -616,6 +616,8 @@ static unsigned int sdebug_guard = DEF_GUARD;
 static int sdebug_lowest_aligned = DEF_LOWEST_ALIGNED;
 static int sdebug_max_luns = DEF_MAX_LUNS;
 static int sdebug_max_queue = SDEBUG_CANQUEUE;	/* per submit queue */
+static unsigned int sdebug_medium_error_start = OPT_MEDIUM_ERR_ADDR;
+static int sdebug_medium_error_count = OPT_MEDIUM_ERR_NUM;
 static atomic_t retired_max_queue;	/* if > 0 then was prior max_queue */
 static int sdebug_ndelay = DEF_NDELAY;	/* if > 0 then unit is nanoseconds */
 static int sdebug_no_lun_0 = DEF_NO_LUN_0;
@@ -649,7 +651,6 @@ static bool sdebug_any_injecting_opt;
 static bool sdebug_verbose;
 static bool have_dif_prot;
 static bool sdebug_statistics = DEF_STATISTICS;
-static bool sdebug_mq_active;
 
 static unsigned int sdebug_store_sectors;
 static sector_t sdebug_capacity;	/* in sectors */
@@ -2712,8 +2713,8 @@ static int resp_read_dt0(struct scsi_cmnd *scp, struct sdebug_dev_info *devip)
 	}
 
 	if (unlikely((SDEBUG_OPT_MEDIUM_ERR & sdebug_opts) &&
-		     (lba <= (OPT_MEDIUM_ERR_ADDR + OPT_MEDIUM_ERR_NUM - 1)) &&
-		     ((lba + num) > OPT_MEDIUM_ERR_ADDR))) {
+		     (lba <= (sdebug_medium_error_start + sdebug_medium_error_count - 1)) &&
+		     ((lba + num) > sdebug_medium_error_start))) {
 		/* claim unrecoverable read error */
 		mk_sense_buffer(scp, MEDIUM_ERROR, UNRECOVERED_READ_ERR, 0);
 		/* set info field and valid bit for fixed descriptor */
@@ -3727,20 +3728,13 @@ static int resp_xdwriteread_10(struct scsi_cmnd *scp,
 
 static struct sdebug_queue *get_queue(struct scsi_cmnd *cmnd)
 {
-	struct sdebug_queue *sqp = sdebug_q_arr;
+	u32 tag = blk_mq_unique_tag(cmnd->request);
+	u16 hwq = blk_mq_unique_tag_to_hwq(tag);
 
-	if (sdebug_mq_active) {
-		u32 tag = blk_mq_unique_tag(cmnd->request);
-		u16 hwq = blk_mq_unique_tag_to_hwq(tag);
-
-		if (unlikely(hwq >= submit_queues)) {
-			pr_warn("Unexpected hwq=%d, apply modulo\n", hwq);
-			hwq %= submit_queues;
-		}
-		pr_debug("tag=%u, hwq=%d\n", tag, hwq);
-		return sqp + hwq;
-	} else
-		return sqp;
+	pr_debug("tag=%#x, hwq=%d\n", tag, hwq);
+	if (WARN_ON_ONCE(hwq >= submit_queues))
+		hwq = 0;
+	return sdebug_q_arr + hwq;
 }
 
 /* Queued (deferred) command completions converge here. */
@@ -4440,6 +4434,8 @@ module_param_named(lbprz, sdebug_lbprz, int, S_IRUGO);
 module_param_named(lowest_aligned, sdebug_lowest_aligned, int, S_IRUGO);
 module_param_named(max_luns, sdebug_max_luns, int, S_IRUGO | S_IWUSR);
 module_param_named(max_queue, sdebug_max_queue, int, S_IRUGO | S_IWUSR);
+module_param_named(medium_error_start, sdebug_medium_error_start, int, S_IRUGO | S_IWUSR);
+module_param_named(medium_error_count, sdebug_medium_error_count, int, S_IRUGO | S_IWUSR);
 module_param_named(ndelay, sdebug_ndelay, int, S_IRUGO | S_IWUSR);
 module_param_named(no_lun_0, sdebug_no_lun_0, int, S_IRUGO | S_IWUSR);
 module_param_named(no_uld, sdebug_no_uld, int, S_IRUGO);
@@ -4497,6 +4493,8 @@ MODULE_PARM_DESC(lbprz,
 MODULE_PARM_DESC(lowest_aligned, "lowest aligned lba (def=0)");
 MODULE_PARM_DESC(max_luns, "number of LUNs per target to simulate(def=1)");
 MODULE_PARM_DESC(max_queue, "max number of queued commands (1 to max(def))");
+MODULE_PARM_DESC(medium_error_start, "starting sector number to return MEDIUM error");
+MODULE_PARM_DESC(medium_error_count, "count of sectors to return follow on MEDIUM error");
 MODULE_PARM_DESC(ndelay, "response delay in nanoseconds (def=0 -> ignore)");
 MODULE_PARM_DESC(no_lun_0, "no LU number 0 (def=0 -> have lun 0)");
 MODULE_PARM_DESC(no_uld, "stop ULD (e.g. sd driver) attaching (def=0))");
@@ -4587,9 +4585,8 @@ static int scsi_debug_show_info(struct seq_file *m, struct Scsi_Host *host)
 		   num_host_resets);
 	seq_printf(m, "dix_reads=%d, dix_writes=%d, dif_errors=%d\n",
 		   dix_reads, dix_writes, dif_errors);
-	seq_printf(m, "usec_in_jiffy=%lu, %s=%d, mq_active=%d\n",
-		   TICK_NSEC / 1000, "statistics", sdebug_statistics,
-		   sdebug_mq_active);
+	seq_printf(m, "usec_in_jiffy=%lu, statistics=%d\n", TICK_NSEC / 1000,
+		   sdebug_statistics);
 	seq_printf(m, "cmnd_count=%d, completions=%d, %s=%d, a_tsf=%d\n",
 		   atomic_read(&sdebug_cmnd_count),
 		   atomic_read(&sdebug_completions),
@@ -5612,13 +5609,8 @@ static int scsi_debug_queuecommand(struct Scsi_Host *shost,
 				n += scnprintf(b + n, sb - n, "%02x ",
 					       (u32)cmd[k]);
 		}
-		if (sdebug_mq_active)
-			sdev_printk(KERN_INFO, sdp, "%s: tag=%u, cmd %s\n",
-				    my_name, blk_mq_unique_tag(scp->request),
-				    b);
-		else
-			sdev_printk(KERN_INFO, sdp, "%s: cmd %s\n", my_name,
-				    b);
+		sdev_printk(KERN_INFO, sdp, "%s: tag=%#x, cmd %s\n", my_name,
+			    blk_mq_unique_tag(scp->request), b);
 	}
 	if (fake_host_busy(scp))
 		return SCSI_MLQUEUE_HOST_BUSY;
@@ -5782,8 +5774,7 @@ static int sdebug_driver_probe(struct device * dev)
 	}
 	/* Decide whether to tell scsi subsystem that we want mq */
 	/* Following should give the same answer for each host */
-	sdebug_mq_active = shost_use_blk_mq(hpnt) && (submit_queues > 1);
-	if (sdebug_mq_active)
+	if (shost_use_blk_mq(hpnt))
 		hpnt->nr_hw_queues = submit_queues;
 
 	sdbg_host->shost = hpnt;
