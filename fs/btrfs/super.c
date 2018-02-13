@@ -41,6 +41,7 @@
 #include <linux/slab.h>
 #include <linux/cleancache.h>
 #include <linux/ratelimit.h>
+#include <linux/crc32c.h>
 #include <linux/btrfs.h>
 #include "delayed-inode.h"
 #include "ctree.h"
@@ -48,7 +49,6 @@
 #include "transaction.h"
 #include "btrfs_inode.h"
 #include "print-tree.h"
-#include "hash.h"
 #include "props.h"
 #include "xattr.h"
 #include "volumes.h"
@@ -522,9 +522,10 @@ int btrfs_parse_options(struct btrfs_fs_info *info, char *options,
 				btrfs_clear_opt(info->mount_opt, NODATASUM);
 				btrfs_set_fs_incompat(info, COMPRESS_LZO);
 				no_compress = 0;
-			} else if (strcmp(args[0].from, "zstd") == 0) {
+			} else if (strncmp(args[0].from, "zstd", 4) == 0) {
 				compress_type = "zstd";
 				info->compress_type = BTRFS_COMPRESS_ZSTD;
+				info->compress_level = btrfs_compress_str2level(args[0].from);
 				btrfs_set_opt(info->mount_opt, COMPRESS);
 				btrfs_clear_opt(info->mount_opt, NODATACOW);
 				btrfs_clear_opt(info->mount_opt, NODATASUM);
@@ -2375,22 +2376,18 @@ static void __init btrfs_print_mod_info(void)
 			", ref-verify=on"
 #endif
 			"\n",
-			btrfs_crc32c_impl());
+			crc32c_impl());
 }
 
 static int __init init_btrfs_fs(void)
 {
 	int err;
 
-	err = btrfs_hash_init();
-	if (err)
-		return err;
-
 	btrfs_props_init();
 
 	err = btrfs_init_sysfs();
 	if (err)
-		goto free_hash;
+		return err;
 
 	btrfs_init_compress();
 
@@ -2471,8 +2468,7 @@ free_cachep:
 free_compress:
 	btrfs_exit_compress();
 	btrfs_exit_sysfs();
-free_hash:
-	btrfs_hash_exit();
+
 	return err;
 }
 
@@ -2492,7 +2488,6 @@ static void __exit exit_btrfs_fs(void)
 	btrfs_exit_sysfs();
 	btrfs_cleanup_fs_uuids();
 	btrfs_exit_compress();
-	btrfs_hash_exit();
 }
 
 late_initcall(init_btrfs_fs);

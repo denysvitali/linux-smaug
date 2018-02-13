@@ -19,8 +19,8 @@
 #include <linux/hashtable.h>
 #include "props.h"
 #include "btrfs_inode.h"
-#include "hash.h"
 #include "transaction.h"
+#include "ctree.h"
 #include "xattr.h"
 #include "compression.h"
 
@@ -407,7 +407,7 @@ static int prop_compression_apply(struct inode *inode,
 		type = BTRFS_COMPRESS_LZO;
 	else if (!strncmp("zlib", value, 4))
 		type = BTRFS_COMPRESS_ZLIB;
-	else if (!strncmp("zstd", value, len))
+	else if (!strncmp("zstd", value, 4))
 		type = BTRFS_COMPRESS_ZSTD;
 	else
 		return -EINVAL;
