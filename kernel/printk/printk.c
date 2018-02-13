@@ -48,6 +48,7 @@
 #include <linux/sched/clock.h>
 #include <linux/sched/debug.h>
 #include <linux/sched/task_stack.h>
+#include <linux/kexec.h>
 
 #include <linux/uaccess.h>
 #include <asm/sections.h>
@@ -2335,10 +2336,6 @@ again:
 
 		printk_safe_enter_irqsave(flags);
 		raw_spin_lock(&logbuf_lock);
-		if (seen_seq != log_next_seq) {
-			wake_klogd = true;
-			seen_seq = log_next_seq;
-		}
 
 		if (console_seq < log_first_seq) {
 			len = sprintf(text, "** %u printk messages dropped **\n",
@@ -2417,12 +2414,17 @@ skip:
 	up_console_sem();
 
 	/*
-	 * Someone could have filled up the buffer again, so re-check if there's
-	 * something to flush. In case we cannot trylock the console_sem again,
-	 * there's a new owner and the console_unlock() from them will do the
-	 * flush, no worries.
+	 * Check whether userland needs notification.  Also, someone could
+	 * have filled up the buffer again, so re-check if there's
+	 * something to flush. In case we cannot trylock the console_sem
+	 * again, there's a new owner and the console_unlock() from them
+	 * will do the flush, no worries.
 	 */
 	raw_spin_lock(&logbuf_lock);
+	if (seen_seq != log_next_seq) {
+		wake_klogd = true;
+		seen_seq = log_next_seq;
+	}
 	retry = console_seq != log_next_seq;
 	raw_spin_unlock(&logbuf_lock);
 	printk_safe_exit_irqrestore(flags);
@@ -3287,9 +3289,11 @@ void __init dump_stack_set_arch_desc(const char *fmt, ...)
  */
 void dump_stack_print_info(const char *log_lvl)
 {
-	printk("%sCPU: %d PID: %d Comm: %.20s %s %s %.*s\n",
+	printk("%sCPU: %d PID: %d Comm: %.20s %s%s %s %.*s\n",
 	       log_lvl, raw_smp_processor_id(), current->pid, current->comm,
-	       print_tainted(), init_utsname()->release,
+	       kexec_crash_loaded() ? "Kdump: loaded " : "",
+	       print_tainted(),
+	       init_utsname()->release,
 	       (int)strcspn(init_utsname()->version, " "),
 	       init_utsname()->version);
 
