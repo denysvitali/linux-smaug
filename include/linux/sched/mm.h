@@ -36,7 +36,13 @@ static inline void mmgrab(struct mm_struct *mm)
 	atomic_inc(&mm->mm_count);
 }
 
-extern void mmdrop(struct mm_struct *mm);
+extern void __mmdrop(struct mm_struct *mm);
+
+static inline void mmdrop(struct mm_struct *mm)
+{
+	if (unlikely(atomic_dec_and_test(&mm->mm_count)))
+		__mmdrop(mm);
+}
 
 /**
  * mmget() - Pin the address space associated with a &struct mm_struct.
