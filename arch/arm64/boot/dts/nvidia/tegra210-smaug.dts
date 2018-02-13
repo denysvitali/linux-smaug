@@ -1483,6 +1483,11 @@
 				};
 			};
 
+			watchdog {
+				maxim,wdt-timeout = <16>;
+				maxim,wdt-clear-time = <13>;
+				status = "disabled";
+			};
 			fps {
 				fps0 {
 					maxim,shutdown-fps-time-period-us = <5120>;
