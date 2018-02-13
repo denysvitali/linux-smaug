@@ -149,6 +149,7 @@ static int panel_jdi_disable(struct drm_panel *panel)
 
 	if (jdi->backlight) {
 		jdi->backlight->props.power = FB_BLANK_POWERDOWN;
+		jdi->backlight->props.state |= BL_CORE_FBBLANK;
 		backlight_update_status(jdi->backlight);
 	}
 
@@ -432,6 +433,7 @@ static int panel_jdi_enable(struct drm_panel *panel)
 		return 0;
 
 	if (jdi->backlight) {
+		jdi->backlight->props.state &= ~BL_CORE_FBBLANK;
 		jdi->backlight->props.power = FB_BLANK_UNBLANK;
 		backlight_update_status(jdi->backlight);
 	}
