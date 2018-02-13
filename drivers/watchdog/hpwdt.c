@@ -38,6 +38,7 @@
 #endif /* CONFIG_HPWDT_NMI_DECODING */
 #include <asm/nmi.h>
 #include <asm/frame.h>
+#include <asm/nospec-branch.h>
 
 #define HPWDT_VERSION			"1.4.0"
 #define SECS_TO_TICKS(secs)		((secs) * 1000 / 128)
@@ -495,11 +496,13 @@ static int hpwdt_pretimeout(unsigned int ulReason, struct pt_regs *regs)
 	if ((ulReason == NMI_UNKNOWN) && !hpwdt_my_nmi())
 		return NMI_DONE;
 
+	firmware_restrict_branch_speculation_start();
 	spin_lock_irqsave(&rom_lock, rom_pl);
 	if (!die_nmi_called && !is_icru && !is_uefi)
 		asminline_call(&cmn_regs, cru_rom_addr);
 	die_nmi_called = 1;
 	spin_unlock_irqrestore(&rom_lock, rom_pl);
+	firmware_restrict_branch_speculation_end();
 
 	if (allow_kdump)
 		hpwdt_stop();
