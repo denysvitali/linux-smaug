@@ -23,6 +23,8 @@
 		serial0 = &uarta;
 		serial1 = &uartc;
 		serial2 = &uartd;
+ 		sdhci0 = "sdhci@700b0600";
+		sdhci1 = "sdhci@700b0200";
 	};
 
 	chosen {
@@ -1862,7 +1864,7 @@
 		bus-width = <4>;
 		keep-power-in-suspend;
 		non-removable;
-		status = "disabled";
+		status = "okay";
 	};
 
 	sdhci@700b0600 {
