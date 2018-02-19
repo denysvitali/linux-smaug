@@ -23,7 +23,7 @@
 	};
 
 	chosen {
-		bootargs = "vmalloc=256M video=tegrafb fbcon video=mxcfb0:dev=lcd loglevel=0 vga=current debug earlyprintk earlycon=uart8250,mmio32,0x70006000 drm.atomic=1 consoleblank=0 firmware_class.path=/lib/firmware";
+		bootargs = "fbcon video=tegrafb debug earlyprintk earlycon=uart8250,mmio32,0x70006000 drm.atomic=1 consoleblank=0 firmware_class.path=/lib/firmware";
 	};
 
 	memory {
@@ -1871,7 +1871,7 @@
 		bus-width = <4>;
 		keep-power-in-suspend;
 		non-removable;
-		status = "disabled";
+		status = "okay";
 	};
 
 	sdhci@700b0600 {
