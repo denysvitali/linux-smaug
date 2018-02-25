@@ -1173,7 +1173,7 @@ struct lightbar_params_v1 {
 } __packed;
 
 /* Lightbar program */
-#define EC_LB_PROG_LEN 192
+#define EC_LB_PROG_LEN 118
 struct lightbar_program {
 	uint8_t size;
 	uint8_t data[EC_LB_PROG_LEN];
