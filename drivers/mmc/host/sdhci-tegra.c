@@ -64,6 +64,7 @@ struct sdhci_tegra_soc_data {
 struct sdhci_tegra {
 	const struct sdhci_tegra_soc_data *soc_data;
 	struct gpio_desc *power_gpio;
+	struct gpio_desc *reset_gpio;
 	bool ddr_signaling;
 	bool pad_calib_required;
 
@@ -367,7 +368,8 @@ static const struct sdhci_pltfm_data sdhci_tegra114_pdata = {
 		  SDHCI_QUIRK_NO_HISPD_BIT |
 		  SDHCI_QUIRK_BROKEN_ADMA_ZEROLEN_DESC |
 		  SDHCI_QUIRK_CAP_CLOCK_BASE_BROKEN,
-	.quirks2 = SDHCI_QUIRK2_PRESET_VALUE_BROKEN,
+	.quirks2 = SDHCI_QUIRK2_PRESET_VALUE_BROKEN |
+		   SDHCI_QUIRK2_BROKEN_64_BIT_DMA,
 	.ops  = &tegra114_sdhci_ops,
 };
 
@@ -407,7 +409,8 @@ static const struct sdhci_pltfm_data sdhci_tegra210_pdata = {
 		  SDHCI_QUIRK_NO_HISPD_BIT |
 		  SDHCI_QUIRK_BROKEN_ADMA_ZEROLEN_DESC |
 		  SDHCI_QUIRK_CAP_CLOCK_BASE_BROKEN,
-	.quirks2 = SDHCI_QUIRK2_PRESET_VALUE_BROKEN,
+	.quirks2 = SDHCI_QUIRK2_PRESET_VALUE_BROKEN |
+		   SDHCI_QUIRK2_BROKEN_64_BIT_DMA,
 	.ops  = &tegra114_sdhci_ops,
 };
 
@@ -488,6 +491,13 @@ static int sdhci_tegra_probe(struct platform_device *pdev)
 		goto err_power_req;
 	}
 
+	tegra_host->reset_gpio = devm_gpiod_get_optional(&pdev->dev, "reset",
+							 GPIOD_OUT_LOW);
+	if (IS_ERR(tegra_host->reset_gpio)) {
+		rc = PTR_ERR(tegra_host->reset_gpio);
+		goto err_reset_req;
+	}
+
 	clk = devm_clk_get(mmc_dev(host->mmc), NULL);
 	if (IS_ERR(clk)) {
 		dev_err(mmc_dev(host->mmc), "clk err\n");
@@ -528,6 +538,7 @@ err_add_host:
 err_rst_get:
 	clk_disable_unprepare(pltfm_host->clk);
 err_clk_get:
+err_reset_req:
 err_power_req:
 err_parse_dt:
 	sdhci_pltfm_free(pdev);
@@ -545,6 +556,9 @@ static int sdhci_tegra_remove(struct platform_device *pdev)
 	reset_control_assert(tegra_host->rst);
 	usleep_range(2000, 4000);
 	clk_disable_unprepare(pltfm_host->clk);
+
+	gpiod_set_value(tegra_host->reset_gpio, 1);
+	gpiod_set_value(tegra_host->power_gpio, 0);
 
 	sdhci_pltfm_free(pdev);
 

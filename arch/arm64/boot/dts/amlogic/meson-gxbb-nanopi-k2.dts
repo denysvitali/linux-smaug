@@ -52,6 +52,7 @@
 
 	aliases {
 		serial0 = &uart_AO;
+		ethernet0 = &ethmac;
 	};
 
 	chosen {
@@ -169,6 +170,7 @@
 			/* Realtek RTL8211F (0x001cc916) */
 			reg = <0>;
 			interrupt-parent = <&gpio_intc>;
+			/* MAC_INTR on GPIOZ_15 */
 			interrupts = <29 IRQ_TYPE_LEVEL_LOW>;
 		};
 	};

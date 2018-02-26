@@ -6,6 +6,8 @@
  *
  * Copyright (C) 2016 Pengutronix, Philipp Zabel <p.zabel@pengutronix.de>
  *
+ * Copyright (C) 2016 Zodiac Inflight Innovations
+ *
  * Initially based on: drivers/gpu/drm/i2c/tda998x_drv.c
  *
  * Copyright (C) 2012 Texas Instruments
@@ -389,7 +391,7 @@ static u32 tc_srcctrl(struct tc_data *tc)
 		reg |= DP0_SRCCTRL_EN810B;
 	if (tc->link.spread)
 		reg |= DP0_SRCCTRL_SSCG;	/* Spread Spectrum Enable */
-	if (tc->link.base.num_lanes == 2)
+	if (tc->link.base.lanes == 2)
 		reg |= DP0_SRCCTRL_LANES_2;	/* Two Main Channel Lanes */
 	if (tc->link.base.rate != 162000)
 		reg |= DP0_SRCCTRL_BW27;	/* 2.7 Gbps link */
@@ -608,9 +610,9 @@ static int tc_get_display_props(struct tc_data *tc)
 		tc->link.base.rate = 270000;
 	}
 
-	if (tc->link.base.num_lanes > 2) {
+	if (tc->link.base.lanes > 2) {
 		dev_dbg(tc->dev, "Falling to 2 lanes\n");
-		tc->link.base.num_lanes = 2;
+		tc->link.base.lanes = 2;
 	}
 
 	ret = drm_dp_dpcd_readb(&tc->aux, DP_MAX_DOWNSPREAD, tmp);
@@ -632,9 +634,8 @@ static int tc_get_display_props(struct tc_data *tc)
 	dev_dbg(tc->dev, "DPCD rev: %d.%d, rate: %s, lanes: %d, framing: %s\n",
 		tc->link.base.revision >> 4, tc->link.base.revision & 0x0f,
 		(tc->link.base.rate == 162000) ? "1.62Gbps" : "2.7Gbps",
-		tc->link.base.num_lanes,
-		(tc->link.base.capabilities & DP_LINK_CAP_ENHANCED_FRAMING) ?
-		"enhanced" : "non-enhanced");
+		tc->link.base.lanes,
+		(tc->link.base.caps.enhanced_framing) ? "enhanced" : "default");
 	dev_dbg(tc->dev, "ANSI 8B/10B: %d\n", tc->link.coding8b10b);
 	dev_dbg(tc->dev, "Display ASSR: %d, TC358767 ASSR: %d\n",
 		tc->link.assr, tc->assr);
@@ -786,13 +787,13 @@ static int tc_link_training(struct tc_data *tc, int pattern)
 					 LT_INTERLANE_ALIGN_DONE |
 					 LT_CHANNEL0_EQ_BITS;
 				/* in case of two lanes */
-				if ((tc->link.base.num_lanes == 2) &&
+				if ((tc->link.base.lanes == 2) &&
 				    (value == (LT_CHANNEL1_EQ_BITS |
 					       LT_INTERLANE_ALIGN_DONE |
 					       LT_CHANNEL0_EQ_BITS)))
 					break;
 				/* in case of one line */
-				if ((tc->link.base.num_lanes == 1) &&
+				if ((tc->link.base.lanes == 1) &&
 				    (value == (LT_INTERLANE_ALIGN_DONE |
 					       LT_CHANNEL0_EQ_BITS)))
 					break;
@@ -964,7 +965,7 @@ static int tc_main_link_setup(struct tc_data *tc)
 		if (ret < 0)
 			goto err_dpcd_read;
 	} while ((--timeout) &&
-		 !(drm_dp_channel_eq_ok(tmp + 2,  tc->link.base.num_lanes)));
+		 !(drm_dp_channel_eq_ok(tmp + 2,  tc->link.base.lanes)));
 
 	if (timeout == 0) {
 		/* Read DPCD 0x200-0x201 */
@@ -1013,7 +1014,7 @@ static int tc_main_link_stream(struct tc_data *tc, int state)
 
 	if (state) {
 		value = VID_MN_GEN | DP_EN;
-		if (tc->link.base.capabilities & DP_LINK_CAP_ENHANCED_FRAMING)
+		if (tc->link.base.caps.enhanced_framing)
 			value |= EF_EN;
 		tc_write(DP0CTL, value);
 		/*

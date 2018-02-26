@@ -1,7 +1,7 @@
 /*******************************************************************
  * This file is part of the Emulex Linux Device Driver for         *
  * Fibre Channel Host Bus Adapters.                                *
- * Copyright (C) 2017 Broadcom. All Rights Reserved. The term      *
+ * Copyright (C) 2017-2018 Broadcom. All Rights Reserved. The term *
  * “Broadcom” refers to Broadcom Limited and/or its subsidiaries.  *
  * Copyright (C) 2009-2016 Emulex.  All rights reserved.           *
  * EMULEX and SLI are trademarks of Emulex.                        *
@@ -145,6 +145,7 @@ struct lpfc_rqb {
 struct lpfc_queue {
 	struct list_head list;
 	struct list_head wq_list;
+	struct list_head wqfull_list;
 	enum lpfc_sli4_queue_type type;
 	enum lpfc_sli4_queue_subtype subtype;
 	struct lpfc_hba *phba;
@@ -161,7 +162,6 @@ struct lpfc_queue {
 #define LPFC_RELEASE_NOTIFICATION_INTERVAL	32  /* For WQs */
 	uint32_t queue_id;	/* Queue ID assigned by the hardware */
 	uint32_t assoc_qid;     /* Queue ID associated with, for CQ/WQ/MQ */
-	uint32_t page_count;	/* Number of pages allocated for this queue */
 	uint32_t host_index;	/* The host's index for putting or getting */
 	uint32_t hba_index;	/* The last known hba index for get or put */
 
@@ -169,9 +169,16 @@ struct lpfc_queue {
 	struct lpfc_rqb *rqbp;	/* ptr to RQ buffers */
 
 	uint32_t q_mode;
-	uint16_t db_format;
+	uint16_t page_count;	/* Number of pages allocated for this queue */
+	uint16_t page_size;	/* size of page allocated for this queue */
+#define LPFC_EXPANDED_PAGE_SIZE	16384
+#define LPFC_DEFAULT_PAGE_SIZE	4096
+	uint16_t chann;		/* IO channel this queue is associated with */
+	uint8_t db_format;
 #define LPFC_DB_RING_FORMAT	0x01
 #define LPFC_DB_LIST_FORMAT	0x02
+	uint8_t q_flag;
+#define HBA_NVMET_WQFULL	0x1 /* We hit WQ Full condition for NVMET */
 	void __iomem *db_regaddr;
 	/* For q stats */
 	uint32_t q_cnt_1;
@@ -366,9 +373,9 @@ struct lpfc_bmbx {
 
 #define LPFC_EQE_DEF_COUNT	1024
 #define LPFC_CQE_DEF_COUNT      1024
+#define LPFC_CQE_EXP_COUNT      4096
 #define LPFC_WQE_DEF_COUNT      256
-#define LPFC_WQE128_DEF_COUNT   128
-#define LPFC_WQE128_MAX_COUNT   256
+#define LPFC_WQE_EXP_COUNT      1024
 #define LPFC_MQE_DEF_COUNT      16
 #define LPFC_RQE_DEF_COUNT	512
 
@@ -480,6 +487,11 @@ struct lpfc_pc_sli4_params {
 #define LPFC_WQ_SZ128_SUPPORT	2
 	uint8_t wqpcnt;
 };
+
+#define LPFC_CQ_4K_PAGE_SZ	0x1
+#define LPFC_CQ_16K_PAGE_SZ	0x4
+#define LPFC_WQ_4K_PAGE_SZ	0x1
+#define LPFC_WQ_16K_PAGE_SZ	0x4
 
 struct lpfc_iov {
 	uint32_t pf_number;
@@ -668,7 +680,6 @@ struct lpfc_sli4_hba {
 	struct list_head sp_asynce_work_queue;
 	struct list_head sp_fcp_xri_aborted_work_queue;
 	struct list_head sp_els_xri_aborted_work_queue;
-	struct list_head sp_nvme_xri_aborted_work_queue;
 	struct list_head sp_unsol_work_queue;
 	struct lpfc_sli4_link link_state;
 	struct lpfc_sli4_lnk_info lnk_info;
@@ -769,7 +780,7 @@ int lpfc_sli4_mbx_read_fcf_rec(struct lpfc_hba *, struct lpfcMboxq *,
 
 void lpfc_sli4_hba_reset(struct lpfc_hba *);
 struct lpfc_queue *lpfc_sli4_queue_alloc(struct lpfc_hba *, uint32_t,
-			uint32_t);
+					 uint32_t, uint32_t);
 void lpfc_sli4_queue_free(struct lpfc_queue *);
 int lpfc_eq_create(struct lpfc_hba *, struct lpfc_queue *, uint32_t);
 int lpfc_modify_hba_eq_delay(struct lpfc_hba *phba, uint32_t startq,
@@ -820,7 +831,6 @@ void lpfc_sli4_fcf_redisc_event_proc(struct lpfc_hba *);
 int lpfc_sli4_resume_rpi(struct lpfc_nodelist *,
 			void (*)(struct lpfc_hba *, LPFC_MBOXQ_t *), void *);
 void lpfc_sli4_fcp_xri_abort_event_proc(struct lpfc_hba *);
-void lpfc_sli4_nvme_xri_abort_event_proc(struct lpfc_hba *phba);
 void lpfc_sli4_els_xri_abort_event_proc(struct lpfc_hba *);
 void lpfc_sli4_fcp_xri_aborted(struct lpfc_hba *,
 			       struct sli4_wcqe_xri_aborted *);

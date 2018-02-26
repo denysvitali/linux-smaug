@@ -158,6 +158,8 @@ struct tegra_xusb_soc {
 	} ports;
 
 	bool scale_ss_clock;
+	bool needs_resets;
+	bool has_ipfs;
 };
 
 struct tegra_xusb {
@@ -629,16 +631,18 @@ static irqreturn_t tegra_xusb_mbox_thread(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static void tegra_xusb_ipfs_config(struct tegra_xusb *tegra,
-				   struct resource *regs)
+static void tegra_xusb_config(struct tegra_xusb *tegra,
+			      struct resource *regs)
 {
 	u32 value;
 
-	value = ipfs_readl(tegra, IPFS_XUSB_HOST_CONFIGURATION_0);
-	value |= IPFS_EN_FPCI;
-	ipfs_writel(tegra, value, IPFS_XUSB_HOST_CONFIGURATION_0);
+	if (tegra->soc->has_ipfs) {
+		value = ipfs_readl(tegra, IPFS_XUSB_HOST_CONFIGURATION_0);
+		value |= IPFS_EN_FPCI;
+		ipfs_writel(tegra, value, IPFS_XUSB_HOST_CONFIGURATION_0);
 
-	usleep_range(10, 20);
+		usleep_range(10, 20);
+	}
 
 	/* Program BAR0 space */
 	value = fpci_readl(tegra, XUSB_CFG_4);
@@ -653,13 +657,37 @@ static void tegra_xusb_ipfs_config(struct tegra_xusb *tegra,
 	value |= XUSB_IO_SPACE_EN | XUSB_MEM_SPACE_EN | XUSB_BUS_MASTER_EN;
 	fpci_writel(tegra, value, XUSB_CFG_1);
 
-	/* Enable interrupt assertion */
-	value = ipfs_readl(tegra, IPFS_XUSB_HOST_INTR_MASK_0);
-	value |= IPFS_IP_INT_MASK;
-	ipfs_writel(tegra, value, IPFS_XUSB_HOST_INTR_MASK_0);
+	if (tegra->soc->has_ipfs) {
+		/* Enable interrupt assertion */
+		value = ipfs_readl(tegra, IPFS_XUSB_HOST_INTR_MASK_0);
+		value |= IPFS_IP_INT_MASK;
+		ipfs_writel(tegra, value, IPFS_XUSB_HOST_INTR_MASK_0);
 
-	/* Set hysteresis */
-	ipfs_writel(tegra, 0x80, IPFS_XUSB_HOST_CLKGATE_HYSTERESIS_0);
+		/* Set hysteresis */
+		ipfs_writel(tegra, 0x80, IPFS_XUSB_HOST_CLKGATE_HYSTERESIS_0);
+	}
+}
+
+static int tegra_xusb_get_resets(struct tegra_xusb *tegra)
+{
+	struct device *dev = tegra->dev;
+	int err;
+
+	tegra->host_rst = devm_reset_control_get(dev, "xusb_host");
+	if (IS_ERR(tegra->host_rst)) {
+		err = PTR_ERR(tegra->host_rst);
+		dev_err(dev, "failed to get xusb_host reset: %d\n", err);
+		return err;
+	}
+
+	tegra->ss_rst = devm_reset_control_get(dev, "xusb_ss");
+	if (IS_ERR(tegra->ss_rst)) {
+		err = PTR_ERR(tegra->ss_rst);
+		dev_err(dev, "failed to get xusb_ss reset: %d\n", err);
+		return err;
+	}
+
+	return 0;
 }
 
 static int tegra_xusb_clk_enable(struct tegra_xusb *tegra)
@@ -767,6 +795,8 @@ static int tegra_xusb_load_firmware(struct tegra_xusb *tegra)
 	struct tegra_xusb_fw_header *header;
 	struct device *dev = tegra->dev;
 	const struct firmware *fw;
+	struct xhci_cap_regs *cap;
+	struct xhci_op_regs *op;
 	unsigned long timeout;
 	time64_t timestamp;
 	struct tm time;
@@ -855,20 +885,25 @@ static int tegra_xusb_load_firmware(struct tegra_xusb *tegra)
 	csb_writel(tegra, le32_to_cpu(header->boot_codetag),
 		   XUSB_FALC_BOOTVEC);
 
-	/* Boot Falcon CPU and wait for it to enter the STOPPED (idle) state. */
-	timeout = jiffies + msecs_to_jiffies(5);
-
+	/* Boot Falcon CPU and wait for USBSTS_CNR to get cleared. */
 	csb_writel(tegra, CPUCTL_STARTCPU, XUSB_FALC_CPUCTL);
 
+	cap = tegra->regs;
+	op = tegra->regs + HC_LENGTH(readl(&cap->hc_capbase));
+
+	timeout = jiffies + msecs_to_jiffies(200);
+
 	while (time_before(jiffies, timeout)) {
-		if (csb_readl(tegra, XUSB_FALC_CPUCTL) == CPUCTL_STATE_STOPPED)
+		value = readl(&op->status);
+		if ((value & STS_CNR) == 0)
 			break;
 
-		usleep_range(100, 200);
+		usleep_range(1000, 2000);
 	}
 
-	if (csb_readl(tegra, XUSB_FALC_CPUCTL) != CPUCTL_STATE_STOPPED) {
-		dev_err(dev, "Falcon failed to start, state: %#x\n",
+	value = readl(&op->status);
+	if (value & STS_CNR) {
+		dev_err(dev, "xHCI controller not ready, Falcon state: %#x\n",
 			csb_readl(tegra, XUSB_FALC_CPUCTL));
 		return -EIO;
 	}
@@ -894,6 +929,7 @@ static int tegra_xusb_probe(struct platform_device *pdev)
 	int err;
 
 	BUILD_BUG_ON(sizeof(struct tegra_xusb_fw_header) != 256);
+	dev_info(&pdev->dev, "> %s(pdev=%p)\n", __func__, pdev);
 
 	tegra = devm_kzalloc(&pdev->dev, sizeof(*tegra), GFP_KERNEL);
 	if (!tegra)
@@ -913,10 +949,14 @@ static int tegra_xusb_probe(struct platform_device *pdev)
 	if (IS_ERR(tegra->fpci_base))
 		return PTR_ERR(tegra->fpci_base);
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 2);
-	tegra->ipfs_base = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(tegra->ipfs_base))
-		return PTR_ERR(tegra->ipfs_base);
+	if (tegra->soc->has_ipfs) {
+		res = platform_get_resource(pdev, IORESOURCE_MEM, 2);
+		tegra->ipfs_base = devm_ioremap_resource(&pdev->dev, res);
+		if (IS_ERR(tegra->ipfs_base))
+			return PTR_ERR(tegra->ipfs_base);
+	}
+
+	dev_info(&pdev->dev, "  resources mapped\n");
 
 	tegra->xhci_irq = platform_get_irq(pdev, 0);
 	if (tegra->xhci_irq < 0)
@@ -926,22 +966,21 @@ static int tegra_xusb_probe(struct platform_device *pdev)
 	if (tegra->mbox_irq < 0)
 		return tegra->mbox_irq;
 
-	tegra->padctl = tegra_xusb_padctl_get(&pdev->dev);
-	if (IS_ERR(tegra->padctl))
-		return PTR_ERR(tegra->padctl);
+	dev_info(&pdev->dev, "  interrupts mapped\n");
 
-	tegra->host_rst = devm_reset_control_get(&pdev->dev, "xusb_host");
-	if (IS_ERR(tegra->host_rst)) {
-		err = PTR_ERR(tegra->host_rst);
-		dev_err(&pdev->dev, "failed to get xusb_host reset: %d\n", err);
-		goto put_padctl;
+	tegra->padctl = tegra_xusb_padctl_get(&pdev->dev);
+	if (IS_ERR(tegra->padctl)) {
+		err = PTR_ERR(tegra->padctl);
+		dev_err(&pdev->dev, "failed to get pad controller: %d\n", err);
+		return err;
 	}
 
-	tegra->ss_rst = devm_reset_control_get(&pdev->dev, "xusb_ss");
-	if (IS_ERR(tegra->ss_rst)) {
-		err = PTR_ERR(tegra->ss_rst);
-		dev_err(&pdev->dev, "failed to get xusb_ss reset: %d\n", err);
-		goto put_padctl;
+	dev_info(&pdev->dev, "  pad controller requested\n");
+
+	if (tegra->soc->needs_resets) {
+		err = tegra_xusb_get_resets(tegra);
+		if (err < 0)
+			goto put_padctl;
 	}
 
 	tegra->host_clk = devm_clk_get(&pdev->dev, "xusb_host");
@@ -1072,7 +1111,7 @@ static int tegra_xusb_probe(struct platform_device *pdev)
 		goto disable_regulator;
 	}
 
-	tegra_xusb_ipfs_config(tegra, regs);
+	tegra_xusb_config(tegra, regs);
 
 	err = tegra_xusb_load_firmware(tegra);
 	if (err < 0) {
@@ -1147,6 +1186,7 @@ static int tegra_xusb_probe(struct platform_device *pdev)
 		goto remove_usb3;
 	}
 
+	dev_info(&pdev->dev, "< %s()\n", __func__);
 	return 0;
 
 remove_usb3:
@@ -1165,6 +1205,7 @@ disable_clk:
 	tegra_xusb_clk_disable(tegra);
 put_padctl:
 	tegra_xusb_padctl_put(tegra->padctl);
+	dev_info(&pdev->dev, "< %s() = %d\n", __func__, err);
 	return err;
 }
 
@@ -1243,6 +1284,8 @@ static const struct tegra_xusb_soc tegra124_soc = {
 		.usb3 = { .offset = 0, .count = 2, },
 	},
 	.scale_ss_clock = true,
+	.needs_resets = true,
+	.has_ipfs = true,
 };
 MODULE_FIRMWARE("nvidia/tegra124/xusb.bin");
 
@@ -1274,12 +1317,40 @@ static const struct tegra_xusb_soc tegra210_soc = {
 		.usb3 = { .offset = 0, .count = 4, },
 	},
 	.scale_ss_clock = false,
+	.needs_resets = true,
+	.has_ipfs = true,
 };
 MODULE_FIRMWARE("nvidia/tegra210/xusb.bin");
+
+static const char * const tegra186_supply_names[] = {
+};
+
+static const struct tegra_xusb_phy_type tegra186_phy_types[] = {
+	{ .name = "usb3", .num = 3, },
+	{ .name = "usb2", .num = 3, },
+	{ .name = "hsic", .num = 1, },
+};
+
+static const struct tegra_xusb_soc tegra186_soc = {
+	.firmware = "nvidia/tegra186/xusb.bin",
+	.supply_names = tegra186_supply_names,
+	.num_supplies = ARRAY_SIZE(tegra186_supply_names),
+	.phy_types = tegra186_phy_types,
+	.num_types = ARRAY_SIZE(tegra186_phy_types),
+	.ports = {
+		.usb3 = { .offset = 0, .count = 3, },
+		.usb2 = { .offset = 3, .count = 3, },
+		.hsic = { .offset = 6, .count = 1, },
+	},
+	.scale_ss_clock = false,
+	.needs_resets = false,
+	.has_ipfs = false,
+};
 
 static const struct of_device_id tegra_xusb_of_match[] = {
 	{ .compatible = "nvidia,tegra124-xusb", .data = &tegra124_soc },
 	{ .compatible = "nvidia,tegra210-xusb", .data = &tegra210_soc },
+	{ .compatible = "nvidia,tegra186-xusb", .data = &tegra186_soc },
 	{ },
 };
 MODULE_DEVICE_TABLE(of, tegra_xusb_of_match);
@@ -1311,6 +1382,8 @@ static const struct xhci_driver_overrides tegra_xhci_overrides __initconst = {
 static int __init tegra_xusb_init(void)
 {
 	xhci_init_driver(&tegra_xhci_hc_driver, &tegra_xhci_overrides);
+
+	pr_info("%s(): initializing driver...\n", __func__);
 
 	return platform_driver_register(&tegra_xusb_driver);
 }

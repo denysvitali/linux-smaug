@@ -118,19 +118,43 @@ u8 drm_dp_get_adjust_request_pre_emphasis(const u8 link_status[DP_LINK_STATUS_SI
 }
 EXPORT_SYMBOL(drm_dp_get_adjust_request_pre_emphasis);
 
-void drm_dp_link_train_clock_recovery_delay(const u8 dpcd[DP_RECEIVER_CAP_SIZE]) {
-	if (dpcd[DP_TRAINING_AUX_RD_INTERVAL] == 0)
-		udelay(100);
-	else
-		mdelay(dpcd[DP_TRAINING_AUX_RD_INTERVAL] * 4);
+u8 drm_dp_get_adjust_request_post_cursor(const u8 link_status[DP_LINK_STATUS_SIZE],
+					 unsigned int lane)
+{
+	unsigned int offset = DP_ADJUST_REQUEST_POST_CURSOR2;
+	u8 value = dp_link_status(link_status, offset);
+
+	return (value >> (lane << 1)) & 0x3;
+}
+EXPORT_SYMBOL(drm_dp_get_adjust_request_post_cursor);
+
+void drm_dp_link_train_clock_recovery_delay(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	unsigned int min = drm_dp_aux_rd_interval(dpcd);
+
+	/*
+	 * The DP specification mandates a delay of 100 us during clock
+	 * recovery if the sink doesn't report an AUX read interval.
+	 */
+	if (min == 0)
+		min = 100;
+
+	usleep_range(min, min * 2);
 }
 EXPORT_SYMBOL(drm_dp_link_train_clock_recovery_delay);
 
-void drm_dp_link_train_channel_eq_delay(const u8 dpcd[DP_RECEIVER_CAP_SIZE]) {
-	if (dpcd[DP_TRAINING_AUX_RD_INTERVAL] == 0)
-		udelay(400);
-	else
-		mdelay(dpcd[DP_TRAINING_AUX_RD_INTERVAL] * 4);
+void drm_dp_link_train_channel_eq_delay(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	unsigned int min = drm_dp_aux_rd_interval(dpcd);
+
+	/*
+	 * The DP specification mandates a delay of 400 us during clock
+	 * recovery if the sink doesn't report an AUX read interval.
+	 */
+	if (min == 0)
+		min = 400;
+
+	usleep_range(min, min * 2);
 }
 EXPORT_SYMBOL(drm_dp_link_train_channel_eq_delay);
 
@@ -207,7 +231,6 @@ static int drm_dp_dpcd_access(struct drm_dp_aux *aux, u8 request,
 		}
 
 		ret = aux->transfer(aux, &msg);
-
 		if (ret >= 0) {
 			native_reply = msg.reply & DP_AUX_NATIVE_REPLY_MASK;
 			if (native_reply == DP_AUX_NATIVE_REPLY_ACK) {
@@ -300,6 +323,22 @@ ssize_t drm_dp_dpcd_write(struct drm_dp_aux *aux, unsigned int offset,
 EXPORT_SYMBOL(drm_dp_dpcd_write);
 
 /**
+ * drm_dp_dpcd_read_link_caps() - read DPCD link capabilities
+ * @aux: DisplayPort AUX channel
+ * @caps: buffer to store the link capabilities in
+ *
+ * Returns:
+ * The number of bytes transferred on success or a negative error code on
+ * failure.
+ */
+int drm_dp_dpcd_read_link_caps(struct drm_dp_aux *aux,
+			       u8 caps[DP_RECEIVER_CAP_SIZE])
+{
+	return drm_dp_dpcd_read(aux, DP_DPCD_REV, caps, DP_RECEIVER_CAP_SIZE);
+}
+EXPORT_SYMBOL(drm_dp_dpcd_read_link_caps);
+
+/**
  * drm_dp_dpcd_read_link_status() - read DPCD link status (bytes 0x202-0x207)
  * @aux: DisplayPort AUX channel
  * @status: buffer to store the link status in (must be at least 6 bytes)
@@ -315,6 +354,144 @@ int drm_dp_dpcd_read_link_status(struct drm_dp_aux *aux,
 }
 EXPORT_SYMBOL(drm_dp_dpcd_read_link_status);
 
+static void drm_dp_link_caps_reset(struct drm_dp_link_caps *caps)
+{
+	caps->enhanced_framing = false;
+	caps->tps3_supported = false;
+	caps->fast_training = false;
+	caps->channel_coding = false;
+	caps->alternate_scrambler_reset = false;
+}
+
+void drm_dp_link_caps_copy(struct drm_dp_link_caps *dest,
+			   const struct drm_dp_link_caps *src)
+{
+	dest->enhanced_framing = src->enhanced_framing;
+	dest->tps3_supported = src->tps3_supported;
+	dest->fast_training = src->fast_training;
+	dest->channel_coding = src->channel_coding;
+	dest->alternate_scrambler_reset = src->alternate_scrambler_reset;
+}
+EXPORT_SYMBOL(drm_dp_link_caps_copy);
+
+static void drm_dp_link_reset(struct drm_dp_link *link)
+{
+	if (!link)
+		return;
+
+	link->revision = 0;
+	link->max_rate = 0;
+	link->max_lanes = 0;
+
+	drm_dp_link_caps_reset(&link->caps);
+	link->aux_rd_interval = 0;
+	link->edp = 0;
+
+	link->rate = 0;
+	link->lanes = 0;
+}
+
+/**
+ * drm_dp_link_add_rate() - add a rate to the list of supported rates
+ * @link: the link to add the rate to
+ * @rate: the rate to add
+ *
+ * Add a link rate to the list of supported link rates.
+ *
+ * Returns:
+ * 0 on success or one of the following negative error codes on failure:
+ * - ENOSPC if the maximum number of supported rates has been reached
+ * - EEXISTS if the link already supports this rate
+ *
+ * See also:
+ * drm_dp_link_remove_rate()
+ */
+int drm_dp_link_add_rate(struct drm_dp_link *link, unsigned long rate)
+{
+	unsigned int i, pivot;
+
+	if (link->num_rates == DP_MAX_SUPPORTED_RATES)
+		return -ENOSPC;
+
+	for (pivot = 0; pivot < link->num_rates; pivot++)
+		if (rate <= link->rates[pivot])
+			break;
+
+	if (pivot != link->num_rates && rate == link->rates[pivot])
+		return -EEXIST;
+
+	for (i = link->num_rates; i > pivot; i--)
+		link->rates[i] = link->rates[i - 1];
+
+	link->rates[pivot] = rate;
+	link->num_rates++;
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_dp_link_add_rate);
+
+/**
+ * drm_dp_link_remove_rate() - remove a rate from the list of supported rates
+ * @link: the link from which to remove the rate
+ * @rate: the rate to remove
+ *
+ * Removes a link rate from the list of supported link rates.
+ *
+ * Returns:
+ * 0 on success or one of the following negative error codes on failure:
+ * - EINVAL if the specified rate is not among the supported rates
+ *
+ * See also:
+ * drm_dp_link_add_rate()
+ */
+int drm_dp_link_remove_rate(struct drm_dp_link *link, unsigned long rate)
+{
+	unsigned int i;
+
+	for (i = 0; i < link->num_rates; i++)
+		if (rate == link->rates[i])
+			break;
+
+	if (i == link->num_rates)
+		return -EINVAL;
+
+	link->num_rates--;
+
+	for (i = i; i < link->num_rates; i++)
+		link->rates[i] = link->rates[i + 1];
+
+	return 0;
+}
+EXPORT_SYMBOL(drm_dp_link_remove_rate);
+
+/**
+ * drm_dp_link_update_rates() - normalize the supported link rates array
+ * @link: the link for which to normalize the supported link rates
+ *
+ * Users should call this function after they've manually modified the array
+ * of supported link rates. This function removes any stale entries, compacts
+ * the array and updates the supported link rate count. Note that calling the
+ * drm_dp_link_remove_rate() function already does this janitorial work.
+ *
+ * See also:
+ * drm_dp_link_add_rate(), drm_dp_link_remove_rate()
+ */
+void drm_dp_link_update_rates(struct drm_dp_link *link)
+{
+	unsigned int i, count = 0;
+
+	for (i = 0; i < link->num_rates; i++) {
+		if (link->rates[i] != 0)
+			link->rates[count++] = link->rates[i];
+	}
+
+	for (i = count; i < link->num_rates; i++)
+		link->rates[i] = 0;
+
+	link->num_rates = count;
+}
+EXPORT_SYMBOL(drm_dp_link_update_rates);
+
 /**
  * drm_dp_link_probe() - probe a DisplayPort link for capabilities
  * @aux: DisplayPort AUX channel
@@ -328,21 +505,64 @@ EXPORT_SYMBOL(drm_dp_dpcd_read_link_status);
  */
 int drm_dp_link_probe(struct drm_dp_aux *aux, struct drm_dp_link *link)
 {
-	u8 values[3];
+	u8 values[DP_RECEIVER_CAP_SIZE];
 	int err;
 
-	memset(link, 0, sizeof(*link));
+	drm_dp_link_reset(link);
 
-	err = drm_dp_dpcd_read(aux, DP_DPCD_REV, values, sizeof(values));
+	err = drm_dp_dpcd_read_link_caps(aux, values);
 	if (err < 0)
 		return err;
 
-	link->revision = values[0];
-	link->rate = drm_dp_bw_code_to_link_rate(values[1]);
-	link->num_lanes = values[2] & DP_MAX_LANE_COUNT_MASK;
+	link->revision = values[DP_DPCD_REV];
+	link->max_rate = drm_dp_max_link_rate(values);
+	link->max_lanes = drm_dp_max_lane_count(values);
 
-	if (values[2] & DP_ENHANCED_FRAME_CAP)
-		link->capabilities |= DP_LINK_CAP_ENHANCED_FRAMING;
+	link->caps.enhanced_framing = drm_dp_enhanced_frame_cap(values);
+	link->caps.tps3_supported = drm_dp_tps3_supported(values);
+	link->caps.fast_training = drm_dp_fast_training_cap(values);
+	link->caps.channel_coding = drm_dp_channel_coding_supported(values);
+
+	if (drm_dp_alternate_scrambler_reset_cap(values)) {
+		static const u8 edp_revs[] = { 0x11, 0x12, 0x13, 0x14 };
+		u8 value;
+
+		link->caps.alternate_scrambler_reset = true;
+
+		err = drm_dp_dpcd_readb(aux, DP_EDP_DPCD_REV, &value);
+		if (err < 0)
+			return err;
+
+		if (value >= ARRAY_SIZE(edp_revs))
+			DRM_ERROR("unsupported eDP version: %02x\n", value);
+		else
+			link->edp = edp_revs[value];
+	}
+
+	link->aux_rd_interval = drm_dp_aux_rd_interval(values);
+
+	link->rate = link->max_rate;
+	link->lanes = link->max_lanes;
+
+	/* Parse SUPPORTED_LINK_RATES from eDP 1.4 */
+	if (link->edp >= 0x14) {
+		u8 supported_rates[DP_MAX_SUPPORTED_RATES * 2];
+		unsigned int i;
+		u16 rate;
+
+		err = drm_dp_dpcd_read(aux, DP_SUPPORTED_LINK_RATES,
+				       supported_rates,
+				       sizeof(supported_rates));
+		if (err < 0)
+			return err;
+
+		for (i = 0; i < DP_MAX_SUPPORTED_RATES; i++) {
+			rate = supported_rates[i * 2 + 1] << 8 |
+			       supported_rates[i * 2 + 0];
+
+			drm_dp_link_add_rate(link, rate * 200);
+		}
+	}
 
 	return 0;
 }
@@ -426,22 +646,91 @@ EXPORT_SYMBOL(drm_dp_link_power_down);
  */
 int drm_dp_link_configure(struct drm_dp_aux *aux, struct drm_dp_link *link)
 {
-	u8 values[2];
+	u8 values[2], value = 0;
 	int err;
 
 	values[0] = drm_dp_link_rate_to_bw_code(link->rate);
-	values[1] = link->num_lanes;
+	values[1] = link->lanes;
 
-	if (link->capabilities & DP_LINK_CAP_ENHANCED_FRAMING)
+	if (link->caps.enhanced_framing)
 		values[1] |= DP_LANE_COUNT_ENHANCED_FRAME_EN;
 
 	err = drm_dp_dpcd_write(aux, DP_LINK_BW_SET, values, sizeof(values));
 	if (err < 0)
 		return err;
 
+	if (link->caps.channel_coding)
+		value = DP_SET_ANSI_8B10B;
+
+	err = drm_dp_dpcd_writeb(aux, DP_MAIN_LINK_CHANNEL_CODING_SET, value);
+	if (err < 0)
+		return err;
+
+	if (link->caps.alternate_scrambler_reset) {
+		err = drm_dp_dpcd_writeb(aux, DP_EDP_CONFIGURATION_SET,
+					 DP_ALTERNATE_SCRAMBLER_RESET_ENABLE);
+		if (err < 0)
+			return err;
+	}
+
 	return 0;
 }
 EXPORT_SYMBOL(drm_dp_link_configure);
+
+/**
+ * drm_dp_link_choose() - choose the lowest possible configuration for a mode
+ * @link: DRM DP link object
+ * @mode: DRM display mode
+ * @info: DRM display information
+ *
+ * According to the eDP specification, a source should select a configuration
+ * with the lowest number of lanes and the lowest possible link rate that can
+ * match the bitrate requirements of a video mode. However it must ensure not
+ * to exceed the capabilities of the sink.
+ *
+ * Returns: 0 on success or a negative error code on failure.
+ */
+int drm_dp_link_choose(struct drm_dp_link *link,
+		       const struct drm_display_mode *mode,
+		       const struct drm_display_info *info)
+{
+	/* available link symbol clock rates */
+	static const unsigned int rates[3] = { 162000, 270000, 540000 };
+	/* available number of lanes */
+	static const unsigned int lanes[3] = { 1, 2, 4 };
+	unsigned long requirement, capacity;
+	unsigned int rate = link->max_rate;
+	unsigned int i, j;
+
+	/* bandwidth requirement */
+	requirement = mode->clock * info->bpc * 3;
+
+	for (i = 0; i < ARRAY_SIZE(lanes) && lanes[i] <= link->max_lanes; i++) {
+		for (j = 0; j < ARRAY_SIZE(rates) && rates[j] <= rate; j++) {
+			/*
+			 * Capacity for this combination of lanes and rate,
+			 * factoring in the ANSI 8B/10B encoding.
+			 *
+			 * Link rates in the DRM DP helpers are really link
+			 * symbol frequencies, so a tenth of the actual rate
+			 * of the link.
+			 */
+			capacity = lanes[i] * (rates[j] * 10) * 8 / 10;
+
+			if (capacity >= requirement) {
+				DRM_DEBUG_KMS("using %u lanes at %u kHz (%lu/%lu kbps)\n",
+					      lanes[i], rates[j], requirement,
+					      capacity);
+				link->lanes = lanes[i];
+				link->rate = rates[j];
+				return 0;
+			}
+		}
+	}
+
+	return -ERANGE;
+}
+EXPORT_SYMBOL(drm_dp_link_choose);
 
 /**
  * drm_dp_downstream_max_clock() - extract branch device max
@@ -1097,7 +1386,6 @@ int drm_dp_aux_register(struct drm_dp_aux *aux)
 	aux->ddc.class = I2C_CLASS_DDC;
 	aux->ddc.owner = THIS_MODULE;
 	aux->ddc.dev.parent = aux->dev;
-	aux->ddc.dev.of_node = aux->dev->of_node;
 
 	strlcpy(aux->ddc.name, aux->name ? aux->name : dev_name(aux->dev),
 		sizeof(aux->ddc.name));

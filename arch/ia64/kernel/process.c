@@ -13,7 +13,6 @@
 #include <linux/pm.h>
 #include <linux/elf.h>
 #include <linux/errno.h>
-#include <linux/kallsyms.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
@@ -35,6 +34,7 @@
 #include <linux/utsname.h>
 #include <linux/tracehook.h>
 #include <linux/rcupdate.h>
+#include <linux/system-power.h>
 
 #include <asm/cpu.h>
 #include <asm/delay.h>
@@ -69,7 +69,6 @@ void
 ia64_do_show_stack (struct unw_frame_info *info, void *arg)
 {
 	unsigned long ip, sp, bsp;
-	char buf[128];			/* don't make it so big that it overflows the stack! */
 
 	printk("\nCall Trace:\n");
 	do {
@@ -79,11 +78,9 @@ ia64_do_show_stack (struct unw_frame_info *info, void *arg)
 
 		unw_get_sp(info, &sp);
 		unw_get_bsp(info, &bsp);
-		snprintf(buf, sizeof(buf),
-			 " [<%016lx>] %%s\n"
+		printk(" [<%016lx>] %pS\n"
 			 "                                sp=%016lx bsp=%016lx\n",
-			 ip, sp, bsp);
-		print_symbol(buf, ip);
+			 ip, (void *)ip, sp, bsp);
 	} while (unw_unwind(info) >= 0);
 }
 
@@ -111,7 +108,7 @@ show_regs (struct pt_regs *regs)
 	printk("psr : %016lx ifs : %016lx ip  : [<%016lx>]    %s (%s)\n",
 	       regs->cr_ipsr, regs->cr_ifs, ip, print_tainted(),
 	       init_utsname()->release);
-	print_symbol("ip is at %s\n", ip);
+	printk("ip is at %pS\n", (void *)ip);
 	printk("unat: %016lx pfs : %016lx rsc : %016lx\n",
 	       regs->ar_unat, regs->ar_pfs, regs->ar_rsc);
 	printk("rnat: %016lx bsps: %016lx pr  : %016lx\n",
@@ -680,8 +677,7 @@ machine_halt (void)
 void
 machine_power_off (void)
 {
-	if (pm_power_off)
-		pm_power_off();
+	system_power_off();
 	machine_halt();
 }
 

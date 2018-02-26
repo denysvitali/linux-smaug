@@ -149,6 +149,11 @@ static const struct renesas_soc soc_rcar_v3m __initconst __maybe_unused = {
 	.id	= 0x54,
 };
 
+static const struct renesas_soc soc_rcar_v3h __initconst __maybe_unused = {
+	.family	= &fam_rcar_gen3,
+	.id	= 0x56,
+};
+
 static const struct renesas_soc soc_rcar_d3 __initconst __maybe_unused = {
 	.family	= &fam_rcar_gen3,
 	.id	= 0x58,
@@ -212,6 +217,9 @@ static const struct of_device_id renesas_socs[] __initconst = {
 #ifdef CONFIG_ARCH_R8A77970
 	{ .compatible = "renesas,r8a77970",	.data = &soc_rcar_v3m },
 #endif
+#ifdef CONFIG_ARCH_R8A77980
+	{ .compatible = "renesas,r8a77980",	.data = &soc_rcar_v3h },
+#endif
 #ifdef CONFIG_ARCH_R8A77995
 	{ .compatible = "renesas,r8a77995",	.data = &soc_rcar_d3 },
 #endif
@@ -250,6 +258,9 @@ static int __init renesas_soc_init(void)
 	if (chipid) {
 		product = readl(chipid);
 		iounmap(chipid);
+		/* R-Car M3-W ES1.1 incorrectly identifies as ES2.0 */
+		if ((product & 0x7fff) == 0x5210)
+			product ^= 0x11;
 		if (soc->id && ((product >> 8) & 0xff) != soc->id) {
 			pr_warn("SoC mismatch (product = 0x%x)\n", product);
 			return -ENODEV;

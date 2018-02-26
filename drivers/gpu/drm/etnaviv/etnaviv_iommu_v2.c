@@ -229,14 +229,14 @@ void etnaviv_iommuv2_restore(struct etnaviv_gpu *gpu)
 	prefetch = etnaviv_buffer_config_mmuv2(gpu,
 				(u32)etnaviv_domain->mtlb_dma,
 				(u32)etnaviv_domain->base.bad_page_dma);
-	etnaviv_gpu_start_fe(gpu, (u32)etnaviv_cmdbuf_get_pa(gpu->buffer),
+	etnaviv_gpu_start_fe(gpu, (u32)etnaviv_cmdbuf_get_pa(&gpu->buffer),
 			     prefetch);
 	etnaviv_gpu_wait_idle(gpu, 100);
 
 	gpu_write(gpu, VIVS_MMUv2_CONTROL, VIVS_MMUv2_CONTROL_ENABLE);
 }
 
-const struct etnaviv_iommu_domain_ops etnaviv_iommuv2_ops = {
+static const struct etnaviv_iommu_domain_ops etnaviv_iommuv2_ops = {
 	.free = etnaviv_iommuv2_domain_free,
 	.map = etnaviv_iommuv2_map,
 	.unmap = etnaviv_iommuv2_unmap,

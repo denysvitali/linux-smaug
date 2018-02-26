@@ -93,6 +93,8 @@ int  nouveau_bo_validate(struct nouveau_bo *, bool interruptible,
 			 bool no_wait_gpu);
 void nouveau_bo_sync_for_device(struct nouveau_bo *nvbo);
 void nouveau_bo_sync_for_cpu(struct nouveau_bo *nvbo);
+int nouveau_bo_sync(struct nouveau_bo *nvbo, struct nouveau_channel *channel,
+		    bool exclusive, bool intr);
 
 /* TODO: submit equivalent to TTM generic API upstream? */
 static inline void __iomem *
@@ -105,4 +107,32 @@ nvbo_kmap_obj_iovirtual(struct nouveau_bo *nvbo)
 	return ioptr;
 }
 
+static inline void
+nouveau_bo_unmap_unpin_unref(struct nouveau_bo **pnvbo)
+{
+	if (*pnvbo) {
+		nouveau_bo_unmap(*pnvbo);
+		nouveau_bo_unpin(*pnvbo);
+		nouveau_bo_ref(NULL, pnvbo);
+	}
+}
+
+static inline int
+nouveau_bo_new_pin_map(struct nouveau_cli *cli, u64 size, int align, u32 flags,
+		       struct nouveau_bo **pnvbo)
+{
+	int ret = nouveau_bo_new(cli, size, align, flags,
+				 0, 0, NULL, NULL, pnvbo);
+	if (ret == 0) {
+		ret = nouveau_bo_pin(*pnvbo, flags, true);
+		if (ret == 0) {
+			ret = nouveau_bo_map(*pnvbo);
+			if (ret == 0)
+				return ret;
+			nouveau_bo_unpin(*pnvbo);
+		}
+		nouveau_bo_ref(NULL, pnvbo);
+	}
+	return ret;
+}
 #endif

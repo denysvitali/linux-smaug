@@ -27,6 +27,8 @@
 #include <linux/i2c.h>
 #include <linux/delay.h>
 
+#include <drm/drm_crtc.h>
+
 /*
  * Unless otherwise noted, all values are from the DP 1.1a spec.  Note that
  * DP and DPCD versions are independent.  Differences from 1.0 are not noted,
@@ -89,6 +91,7 @@
 # define DP_DETAILED_CAP_INFO_AVAILABLE	    (1 << 4) /* DPI */
 
 #define DP_MAIN_LINK_CHANNEL_CODING         0x006
+# define DP_CAP_ANSI_8B10B		    (1 << 0)
 
 #define DP_DOWN_STREAM_PORT_COUNT	    0x007
 # define DP_PORT_COUNT_MASK		    0x0f
@@ -511,6 +514,14 @@
 # define DP_ADJUST_PRE_EMPHASIS_LANE1_SHIFT  6
 
 #define DP_ADJUST_REQUEST_POST_CURSOR2      0x20c
+# define DP_ADJUST_POST_CURSOR2_LANE0_MASK  0x03
+# define DP_ADJUST_POST_CURSOR2_LANE0_SHIFT 0
+# define DP_ADJUST_POST_CURSOR2_LANE1_MASK  0x0c
+# define DP_ADJUST_POST_CURSOR2_LANE1_SHIFT 2
+# define DP_ADJUST_POST_CURSOR2_LANE2_MASK  0x30
+# define DP_ADJUST_POST_CURSOR2_LANE2_SHIFT 4
+# define DP_ADJUST_POST_CURSOR2_LANE3_MASK  0xc0
+# define DP_ADJUST_POST_CURSOR2_LANE3_SHIFT 6
 
 #define DP_TEST_REQUEST			    0x218
 # define DP_TEST_LINK_TRAINING		    (1 << 0)
@@ -635,6 +646,7 @@
 # define DP_SET_POWER_D0                    0x1
 # define DP_SET_POWER_D3                    0x2
 # define DP_SET_POWER_MASK                  0x3
+# define DP_SET_POWER_D3_AUX_ON             0x5
 
 #define DP_EDP_DPCD_REV			    0x700    /* eDP 1.2 */
 # define DP_EDP_11			    0x00
@@ -890,6 +902,8 @@ u8 drm_dp_get_adjust_request_voltage(const u8 link_status[DP_LINK_STATUS_SIZE],
 				     int lane);
 u8 drm_dp_get_adjust_request_pre_emphasis(const u8 link_status[DP_LINK_STATUS_SIZE],
 					  int lane);
+u8 drm_dp_get_adjust_request_post_cursor(const u8 link_status[DP_LINK_STATUS_SIZE],
+					 unsigned int lane);
 
 #define DP_BRANCH_OUI_HEADER_SIZE	0xc
 #define DP_RECEIVER_CAP_SIZE		0xf
@@ -973,6 +987,42 @@ static inline bool
 drm_dp_is_branch(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
 {
 	return dpcd[DP_DOWNSTREAMPORT_PRESENT] & DP_DWN_STRM_PORT_PRESENT;
+}
+
+static inline bool
+drm_dp_fast_training_cap(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	return dpcd[DP_DPCD_REV] >= 0x11 &&
+		(dpcd[DP_MAX_DOWNSPREAD] & DP_NO_AUX_HANDSHAKE_LINK_TRAINING);
+}
+
+static inline bool
+drm_dp_channel_coding_supported(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	return dpcd[DP_MAIN_LINK_CHANNEL_CODING] & DP_CAP_ANSI_8B10B;
+}
+
+static inline bool
+drm_dp_alternate_scrambler_reset_cap(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	return dpcd[DP_EDP_CONFIGURATION_CAP] &
+			DP_ALTERNATE_SCRAMBLER_RESET_CAP;
+}
+
+/**
+ * drm_dp_read_aux_interval() - read the AUX read interval from the DPCD
+ * @dpcd: receiver capacity buffer
+ *
+ * Reads the AUX read interval (in microseconds) from the DPCD. Note that the
+ * TRAINING_AUX_RD_INTERVAL stores the value in units of 4 milliseconds.
+ *
+ * Returns:
+ * The read AUX interval in microseconds.
+ */
+static inline unsigned int
+drm_dp_aux_rd_interval(const u8 dpcd[DP_RECEIVER_CAP_SIZE])
+{
+	return dpcd[DP_TRAINING_AUX_RD_INTERVAL] * 4000;
 }
 
 /*
@@ -1090,25 +1140,74 @@ static inline ssize_t drm_dp_dpcd_writeb(struct drm_dp_aux *aux,
 	return drm_dp_dpcd_write(aux, offset, &value, 1);
 }
 
+int drm_dp_dpcd_read_link_caps(struct drm_dp_aux *aux,
+			       u8 caps[DP_RECEIVER_CAP_SIZE]);
 int drm_dp_dpcd_read_link_status(struct drm_dp_aux *aux,
 				 u8 status[DP_LINK_STATUS_SIZE]);
 
 /*
  * DisplayPort link
  */
-#define DP_LINK_CAP_ENHANCED_FRAMING (1 << 0)
 
+/**
+ * struct drm_dp_link_caps - DP link capabilities
+ * @enhanced_framing: enhanced framing capability (mandatory as of DP 1.2)
+ * @tps3_supported: training pattern sequence 3 supported for equalization
+ * @fast_training: AUX CH handshake not required for link training
+ * @channel_coding: ANSI 8B/10B channel coding capability
+ * @alternate_scrambler_reset: eDP alternate scrambler reset capability
+ */
+struct drm_dp_link_caps {
+	bool enhanced_framing;
+	bool tps3_supported;
+	bool fast_training;
+	bool channel_coding;
+	bool alternate_scrambler_reset;
+};
+
+void drm_dp_link_caps_copy(struct drm_dp_link_caps *dest,
+			   const struct drm_dp_link_caps *src);
+
+/**
+ * struct drm_dp_link - DP link capabilities and configuration
+ * @revision: DP specification revision supported on the link
+ * @max_rate: maximum clock rate supported on the link
+ * @max_lanes: maximum number of lanes supported on the link
+ * @caps: capabilities supported on the link (see &drm_dp_link_caps)
+ * @aux_rd_interval: AUX read interval to use for training (in microseconds)
+ * @edp: eDP revision (0x11: eDP 1.1, 0x12: eDP 1.2, ...)
+ * @rate: currently configured link rate
+ * @lanes: currently configured number of lanes
+ * @rates: additional supported link rates in kHz (eDP 1.4)
+ * @num_rates: number of additional supported link rates (eDP 1.4)
+ */
 struct drm_dp_link {
 	unsigned char revision;
+	unsigned int max_rate;
+	unsigned int max_lanes;
+
+	struct drm_dp_link_caps caps;
+	unsigned int aux_rd_interval;
+	unsigned char edp;
+
 	unsigned int rate;
-	unsigned int num_lanes;
-	unsigned long capabilities;
+	unsigned int lanes;
+
+	unsigned long rates[DP_MAX_SUPPORTED_RATES];
+	unsigned int num_rates;
 };
+
+int drm_dp_link_add_rate(struct drm_dp_link *link, unsigned long rate);
+int drm_dp_link_remove_rate(struct drm_dp_link *link, unsigned long rate);
+void drm_dp_link_update_rates(struct drm_dp_link *link);
 
 int drm_dp_link_probe(struct drm_dp_aux *aux, struct drm_dp_link *link);
 int drm_dp_link_power_up(struct drm_dp_aux *aux, struct drm_dp_link *link);
 int drm_dp_link_power_down(struct drm_dp_aux *aux, struct drm_dp_link *link);
 int drm_dp_link_configure(struct drm_dp_aux *aux, struct drm_dp_link *link);
+int drm_dp_link_choose(struct drm_dp_link *link,
+		       const struct drm_display_mode *mode,
+		       const struct drm_display_info *info);
 int drm_dp_downstream_max_clock(const u8 dpcd[DP_RECEIVER_CAP_SIZE],
 				const u8 port_cap[4]);
 int drm_dp_downstream_max_bpc(const u8 dpcd[DP_RECEIVER_CAP_SIZE],

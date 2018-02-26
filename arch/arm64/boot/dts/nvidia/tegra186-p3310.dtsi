@@ -10,6 +10,7 @@
 	aliases {
 		sdhci0 = "/sdhci@3460000";
 		sdhci1 = "/sdhci@3400000";
+		sdhci2 = "/sdhci@3440000";
 		serial0 = &uarta;
 		i2c0 = "/bpmp/i2c";
 		i2c1 = "/i2c@3160000";
@@ -51,6 +52,10 @@
 		};
 	};
 
+	memory-controller@2c00000 {
+		status = "okay";
+	};
+
 	serial@3100000 {
 		status = "okay";
 	};
@@ -73,7 +78,7 @@
 		status = "okay";
 	};
 
-	i2c@3190000 {
+	ddc: i2c@3190000 {
 		status = "okay";
 	};
 
@@ -88,19 +93,26 @@
 	/* SDMMC1 (SD/MMC) */
 	sdhci@3400000 {
 		cd-gpios = <&gpio TEGRA_MAIN_GPIO(P, 5) GPIO_ACTIVE_LOW>;
-		wp-gpios = <&gpio TEGRA_MAIN_GPIO(P, 4) GPIO_ACTIVE_LOW>;
+		wp-gpios = <&gpio TEGRA_MAIN_GPIO(P, 4) GPIO_ACTIVE_HIGH>;
 
 		vqmmc-supply = <&vddio_sdmmc1>;
 	};
 
 	/* SDMMC3 (SDIO) */
 	sdhci@3440000 {
-		status = "okay";
+		status = "disabled";
+		bus-width = <4>;
+		non-removable;
+
+		power-gpios = <&gpio TEGRA_MAIN_GPIO(N, 0) GPIO_ACTIVE_HIGH>;
+
+		vqmmc-supply = <&vddio_sdmmc3>;
+		vmmc-supply = <&vdd_1v8>;
 	};
 
 	/* SDMMC4 (eMMC) */
 	sdhci@3460000 {
-		status = "okay";
+		status = "disabled";
 		bus-width = <8>;
 		non-removable;
 
@@ -164,6 +176,8 @@
 
 				#gpio-cells = <2>;
 				gpio-controller;
+
+				system-power-controller;
 
 				pinctrl-names = "default";
 				pinctrl-0 = <&max77620_default>;
@@ -317,7 +331,7 @@
 						regulator-max-microvolt = <2800000>;
 					};
 
-					avdd_1v05: ldo7 {
+					vdd_hdmi_1v05: ldo7 {
 						regulator-name = "VDD_HDMI_1V05";
 						regulator-min-microvolt = <1050000>;
 						regulator-max-microvolt = <1050000>;

@@ -71,16 +71,16 @@ static struct snd_soc_dai_driver dmic_dai = {
 	.ops    = &dmic_dai_ops,
 };
 
-static int dmic_codec_probe(struct snd_soc_codec *codec)
+static int dmic_component_probe(struct snd_soc_component *component)
 {
 	struct gpio_desc *dmic_en;
 
-	dmic_en = devm_gpiod_get_optional(codec->dev,
+	dmic_en = devm_gpiod_get_optional(component->dev,
 					"dmicen", GPIOD_OUT_LOW);
 	if (IS_ERR(dmic_en))
 		return PTR_ERR(dmic_en);
 
-	snd_soc_codec_set_drvdata(codec, dmic_en);
+	snd_soc_component_set_drvdata(component, dmic_en);
 
 	return 0;
 }
@@ -95,26 +95,44 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"DMIC AIF", NULL, "DMic"},
 };
 
-static const struct snd_soc_codec_driver soc_dmic = {
-	.probe = dmic_codec_probe,
-	.component_driver = {
-		.dapm_widgets		= dmic_dapm_widgets,
-		.num_dapm_widgets	= ARRAY_SIZE(dmic_dapm_widgets),
-		.dapm_routes		= intercon,
-		.num_dapm_routes	= ARRAY_SIZE(intercon),
-	},
+static const struct snd_soc_component_driver soc_dmic = {
+	.probe			= dmic_component_probe,
+	.dapm_widgets		= dmic_dapm_widgets,
+	.num_dapm_widgets	= ARRAY_SIZE(dmic_dapm_widgets),
+	.dapm_routes		= intercon,
+	.num_dapm_routes	= ARRAY_SIZE(intercon),
+	.idle_bias_on		= 1,
+	.use_pmdown_time	= 1,
+	.endianness		= 1,
+	.non_legacy_dai_naming	= 1,
 };
 
 static int dmic_dev_probe(struct platform_device *pdev)
 {
-	return snd_soc_register_codec(&pdev->dev,
-			&soc_dmic, &dmic_dai, 1);
-}
+	int err;
+	u32 chans;
+	struct snd_soc_dai_driver *dai_drv = &dmic_dai;
 
-static int dmic_dev_remove(struct platform_device *pdev)
-{
-	snd_soc_unregister_codec(&pdev->dev);
-	return 0;
+	if (pdev->dev.of_node) {
+		err = of_property_read_u32(pdev->dev.of_node, "num-channels", &chans);
+		if (err && (err != -EINVAL))
+			return err;
+
+		if (!err) {
+			if (chans < 1 || chans > 8)
+				return -EINVAL;
+
+			dai_drv = devm_kzalloc(&pdev->dev, sizeof(*dai_drv), GFP_KERNEL);
+			if (!dai_drv)
+				return -ENOMEM;
+
+			memcpy(dai_drv, &dmic_dai, sizeof(*dai_drv));
+			dai_drv->capture.channels_max = chans;
+		}
+	}
+
+	return devm_snd_soc_register_component(&pdev->dev,
+			&soc_dmic, dai_drv, 1);
 }
 
 MODULE_ALIAS("platform:dmic-codec");
@@ -130,7 +148,6 @@ static struct platform_driver dmic_driver = {
 		.of_match_table = dmic_dev_match,
 	},
 	.probe = dmic_dev_probe,
-	.remove = dmic_dev_remove,
 };
 
 module_platform_driver(dmic_driver);

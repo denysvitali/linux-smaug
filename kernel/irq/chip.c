@@ -136,6 +136,7 @@ int irq_set_msi_desc(unsigned int irq, struct msi_desc *entry)
 {
 	return irq_set_msi_desc_off(irq, 0, entry);
 }
+EXPORT_SYMBOL(irq_set_msi_desc);
 
 /**
  *	irq_set_chip_data - set irq chip data for an irq
@@ -294,11 +295,11 @@ int irq_activate(struct irq_desc *desc)
 	return 0;
 }
 
-void irq_activate_and_startup(struct irq_desc *desc, bool resend)
+int irq_activate_and_startup(struct irq_desc *desc, bool resend)
 {
 	if (WARN_ON(irq_activate(desc)))
-		return;
-	irq_startup(desc, resend, IRQ_START_FORCE);
+		return 0;
+	return irq_startup(desc, resend, IRQ_START_FORCE);
 }
 
 static void __irq_disable(struct irq_desc *desc, bool mask);

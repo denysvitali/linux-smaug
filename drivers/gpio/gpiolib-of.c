@@ -56,6 +56,42 @@ static struct gpio_desc *of_xlate_and_get_gpiod_flags(struct gpio_chip *chip,
 	return gpiochip_get_desc(chip, ret);
 }
 
+static void of_gpio_flags_quirks(struct device_node *np,
+				 enum of_gpio_flags *flags)
+{
+	/*
+	 * Some GPIO fixed regulator quirks.
+	 * Note that active low is the default.
+	 */
+	if (IS_ENABLED(CONFIG_REGULATOR) &&
+	    (of_device_is_compatible(np, "reg-fixed-voltage") ||
+	     of_device_is_compatible(np, "regulator-gpio"))) {
+		/*
+		 * The regulator GPIO handles are specified such that the
+		 * presence or absence of "enable-active-high" solely controls
+		 * the polarity of the GPIO line. Any phandle flags must
+		 * be actively ignored.
+		 */
+		if (*flags & OF_GPIO_ACTIVE_LOW) {
+			pr_warn("%s GPIO handle specifies active low - ignored\n",
+				of_node_full_name(np));
+			*flags &= ~OF_GPIO_ACTIVE_LOW;
+		}
+		if (!of_property_read_bool(np, "enable-active-high"))
+			*flags |= OF_GPIO_ACTIVE_LOW;
+	}
+	/*
+	 * Legacy open drain handling for fixed voltage regulators.
+	 */
+	if (IS_ENABLED(CONFIG_REGULATOR) &&
+	    of_device_is_compatible(np, "reg-fixed-voltage") &&
+	    of_property_read_bool(np, "gpio-open-drain")) {
+		*flags |= (OF_GPIO_SINGLE_ENDED | OF_GPIO_OPEN_DRAIN);
+		pr_info("%s uses legacy open drain flag - update the DTS if you can\n",
+			of_node_full_name(np));
+	}
+}
+
 /**
  * of_get_named_gpiod_flags() - Get a GPIO descriptor and flags for GPIO API
  * @np:		device node to get GPIO from
@@ -75,8 +111,8 @@ struct gpio_desc *of_get_named_gpiod_flags(struct device_node *np,
 	struct gpio_desc *desc;
 	int ret;
 
-	ret = of_parse_phandle_with_args(np, propname, "#gpio-cells", index,
-					 &gpiospec);
+	ret = of_parse_phandle_with_args_map(np, propname, "gpio", index,
+					     &gpiospec);
 	if (ret) {
 		pr_debug("%s: can't parse '%s' property of node '%pOF[%d]'\n",
 			__func__, propname, np, index);
@@ -92,6 +128,9 @@ struct gpio_desc *of_get_named_gpiod_flags(struct device_node *np,
 	desc = of_xlate_and_get_gpiod_flags(chip, &gpiospec, flags);
 	if (IS_ERR(desc))
 		goto out;
+
+	if (flags)
+		of_gpio_flags_quirks(np, flags);
 
 	pr_debug("%s: parsed '%s' property of node '%pOF[%d]' - status (%d)\n",
 		 __func__, propname, np, index,
@@ -117,6 +156,71 @@ int of_get_named_gpio_flags(struct device_node *np, const char *list_name,
 }
 EXPORT_SYMBOL(of_get_named_gpio_flags);
 
+/*
+ * The SPI GPIO bindings happened before we managed to establish that GPIO
+ * properties should be named "foo-gpios" so we have this special kludge for
+ * them.
+ */
+static struct gpio_desc *of_find_spi_gpio(struct device *dev, const char *con_id,
+					  enum of_gpio_flags *of_flags)
+{
+	char prop_name[32]; /* 32 is max size of property name */
+	struct device_node *np = dev->of_node;
+	struct gpio_desc *desc;
+
+	/*
+	 * Hopefully the compiler stubs the rest of the function if this
+	 * is false.
+	 */
+	if (!IS_ENABLED(CONFIG_SPI_MASTER))
+		return ERR_PTR(-ENOENT);
+
+	/* Allow this specifically for "spi-gpio" devices */
+	if (!of_device_is_compatible(np, "spi-gpio") || !con_id)
+		return ERR_PTR(-ENOENT);
+
+	/* Will be "gpio-sck", "gpio-mosi" or "gpio-miso" */
+	snprintf(prop_name, sizeof(prop_name), "%s-%s", "gpio", con_id);
+
+	desc = of_get_named_gpiod_flags(np, prop_name, 0, of_flags);
+	return desc;
+}
+
+/*
+ * Some regulator bindings happened before we managed to establish that GPIO
+ * properties should be named "foo-gpios" so we have this special kludge for
+ * them.
+ */
+static struct gpio_desc *of_find_regulator_gpio(struct device *dev, const char *con_id,
+						enum of_gpio_flags *of_flags)
+{
+	/* These are the connection IDs we accept as legacy GPIO phandles */
+	const char *whitelist[] = {
+		"wlf,ldoena", /* Arizona */
+		"wlf,ldo1ena", /* WM8994 */
+		"wlf,ldo2ena", /* WM8994 */
+	};
+	struct device_node *np = dev->of_node;
+	struct gpio_desc *desc;
+	int i;
+
+	if (!IS_ENABLED(CONFIG_REGULATOR))
+		return ERR_PTR(-ENOENT);
+
+	if (!con_id)
+		return ERR_PTR(-ENOENT);
+
+	for (i = 0; i < ARRAY_SIZE(whitelist); i++)
+		if (!strcmp(con_id, whitelist[i]))
+			break;
+
+	if (i == ARRAY_SIZE(whitelist))
+		return ERR_PTR(-ENOENT);
+
+	desc = of_get_named_gpiod_flags(np, con_id, 0, of_flags);
+	return desc;
+}
+
 struct gpio_desc *of_find_gpio(struct device *dev, const char *con_id,
 			       unsigned int idx,
 			       enum gpio_lookup_flags *flags)
@@ -126,6 +230,7 @@ struct gpio_desc *of_find_gpio(struct device *dev, const char *con_id,
 	struct gpio_desc *desc;
 	unsigned int i;
 
+	/* Try GPIO property "foo-gpios" and "foo-gpio" */
 	for (i = 0; i < ARRAY_SIZE(gpio_suffixes); i++) {
 		if (con_id)
 			snprintf(prop_name, sizeof(prop_name), "%s-%s", con_id,
@@ -140,6 +245,14 @@ struct gpio_desc *of_find_gpio(struct device *dev, const char *con_id,
 			break;
 	}
 
+	/* Special handling for SPI GPIOs if used */
+	if (IS_ERR(desc))
+		desc = of_find_spi_gpio(dev, con_id, &of_flags);
+
+	/* Special handling for regulator GPIOs if used */
+	if (IS_ERR(desc))
+		desc = of_find_regulator_gpio(dev, con_id, &of_flags);
+
 	if (IS_ERR(desc))
 		return desc;
 
@@ -153,8 +266,8 @@ struct gpio_desc *of_find_gpio(struct device *dev, const char *con_id,
 			*flags |= GPIO_OPEN_SOURCE;
 	}
 
-	if (of_flags & OF_GPIO_SLEEP_MAY_LOSE_VALUE)
-		*flags |= GPIO_SLEEP_MAY_LOSE_VALUE;
+	if (of_flags & OF_GPIO_TRANSITORY)
+		*flags |= GPIO_TRANSITORY;
 
 	return desc;
 }
@@ -214,6 +327,8 @@ static struct gpio_desc *of_parse_own_gpio(struct device_node *np,
 
 	if (xlate_flags & OF_GPIO_ACTIVE_LOW)
 		*lflags |= GPIO_ACTIVE_LOW;
+	if (xlate_flags & OF_GPIO_TRANSITORY)
+		*lflags |= GPIO_TRANSITORY;
 
 	if (of_property_read_bool(np, "input"))
 		*dflags |= GPIOD_IN;
@@ -308,6 +423,107 @@ int of_gpio_simple_xlate(struct gpio_chip *gc,
 	return gpiospec->args[0];
 }
 EXPORT_SYMBOL(of_gpio_simple_xlate);
+
+/**
+ * gpio_banked_irq_domain_xlate - decode an IRQ specifier for banked chips
+ * @domain: IRQ domain
+ * @np: device tree node
+ * @spec: IRQ specifier
+ * @size: number of cells in IRQ specifier
+ * @hwirq: return location for the hardware IRQ number
+ * @type: return location for the IRQ type
+ *
+ * Translates the IRQ specifier found in device tree into a hardware IRQ
+ * number and an interrupt type.
+ *
+ * Returns:
+ * 0 on success or a negative error code on failure.
+ */
+int gpio_banked_irq_domain_xlate(struct irq_domain *domain,
+				 struct device_node *np,
+				 const u32 *spec, unsigned int size,
+				 unsigned long *hwirq,
+				 unsigned int *type)
+{
+	struct gpio_chip *gc = domain->host_data;
+	unsigned int bank, line, i, offset = 0;
+
+	if (size < 2)
+		return -EINVAL;
+
+	bank = (spec[0] >> gc->of_gpio_bank_shift) & gc->of_gpio_bank_mask;
+	line = (spec[0] >> gc->of_gpio_line_shift) & gc->of_gpio_line_mask;
+
+	if (bank >= gc->num_banks) {
+		dev_err(gc->parent, "invalid bank number: %u\n", bank);
+		return -EINVAL;
+	}
+
+	if (line >= gc->banks[bank]->num_lines) {
+		dev_err(gc->parent, "invalid line number: %u\n", line);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < bank; i++)
+		offset += gc->banks[i]->num_lines;
+
+	*type = spec[1] & IRQ_TYPE_SENSE_MASK;
+	*hwirq = offset + line;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(gpio_banked_irq_domain_xlate);
+
+/**
+ * of_gpio_banked_xlate - translate GPIO specifier to a GPIO number and flags
+ * @gc: GPIO chip
+ * @gpiospec: GPIO specifier
+ * @flags: return location for flags parsed from the GPIO specifier
+ *
+ * This translation function takes into account multiple banks that can make
+ * up a single controller. Each bank can contain one or more pins. A single
+ * cell in the specifier is used to represent a (bank, pin) pair, with each
+ * encoded in different fields. The &gpio_chip.of_gpio_bank_shift and
+ * &gpio_chip.of_gpio_bank_mask fields, and &gpio_chip.of_gpio_line_shift and
+ * &gpio_chip.of_gpio_line_mask are used to specify the encoding.
+ *
+ * Returns:
+ * The chip-relative index of the pin given by the GPIO specifier.
+ */
+int of_gpio_banked_xlate(struct gpio_chip *gc,
+			 const struct of_phandle_args *gpiospec, u32 *flags)
+{
+	unsigned int offset = 0, bank, line, i;
+	const u32 *spec = gpiospec->args;
+
+	if (WARN_ON(gc->of_gpio_n_cells < 2))
+		return -EINVAL;
+
+	if (WARN_ON(gpiospec->args_count < gc->of_gpio_n_cells))
+		return -EINVAL;
+
+	bank = (spec[0] >> gc->of_gpio_bank_shift) & gc->of_gpio_bank_mask;
+	line = (spec[0] >> gc->of_gpio_line_shift) & gc->of_gpio_line_mask;
+
+	if (bank >= gc->num_banks) {
+		dev_err(gc->parent, "invalid bank number: %u\n", bank);
+		return -EINVAL;
+	}
+
+	if (line >= gc->banks[bank]->num_lines) {
+		dev_err(gc->parent, "invalid line number: %u\n", line);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < bank; i++)
+		offset += gc->banks[i]->num_lines;
+
+	if (flags)
+		*flags = spec[1];
+
+	return offset + line;
+}
+EXPORT_SYMBOL(of_gpio_banked_xlate);
 
 /**
  * of_mm_gpiochip_add_data - Add memory mapped GPIO chip (bank)

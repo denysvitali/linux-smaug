@@ -20,6 +20,7 @@
 #include <linux/acpi.h>
 #include <linux/module.h>
 #include <linux/syscore_ops.h>
+#include <linux/system-power.h>
 #include <asm/io.h>
 #include <trace/events/power.h>
 
@@ -367,9 +368,19 @@ static const struct dmi_system_id acpisleep_dmi_table[] __initconst = {
 	{},
 };
 
+static bool ignore_blacklist;
+
+void __init acpi_sleep_no_blacklist(void)
+{
+	ignore_blacklist = true;
+}
+
 static void __init acpi_sleep_dmi_check(void)
 {
 	int year;
+
+	if (ignore_blacklist)
+		return;
 
 	if (dmi_get_date(DMI_BIOS_DATE, &year, NULL, NULL) && year >= 2012)
 		acpi_nvs_nosave_s3();
@@ -697,7 +708,8 @@ static const struct acpi_device_id lps0_device_ids[] = {
 #define ACPI_LPS0_ENTRY		5
 #define ACPI_LPS0_EXIT		6
 
-#define ACPI_S2IDLE_FUNC_MASK	((1 << ACPI_LPS0_ENTRY) | (1 << ACPI_LPS0_EXIT))
+#define ACPI_LPS0_SCREEN_MASK	((1 << ACPI_LPS0_SCREEN_OFF) | (1 << ACPI_LPS0_SCREEN_ON))
+#define ACPI_LPS0_PLATFORM_MASK	((1 << ACPI_LPS0_ENTRY) | (1 << ACPI_LPS0_EXIT))
 
 static acpi_handle lps0_device_handle;
 static guid_t lps0_dsm_guid;
@@ -900,7 +912,8 @@ static int lps0_device_attach(struct acpi_device *adev,
 	if (out_obj && out_obj->type == ACPI_TYPE_BUFFER) {
 		char bitmask = *(char *)out_obj->buffer.pointer;
 
-		if ((bitmask & ACPI_S2IDLE_FUNC_MASK) == ACPI_S2IDLE_FUNC_MASK) {
+		if ((bitmask & ACPI_LPS0_PLATFORM_MASK) == ACPI_LPS0_PLATFORM_MASK ||
+		    (bitmask & ACPI_LPS0_SCREEN_MASK) == ACPI_LPS0_SCREEN_MASK) {
 			lps0_dsm_func_mask = bitmask;
 			lps0_device_handle = adev->handle;
 			/*
@@ -1217,27 +1230,38 @@ static void acpi_sleep_hibernate_setup(void)
 static inline void acpi_sleep_hibernate_setup(void) {}
 #endif /* !CONFIG_HIBERNATION */
 
-static void acpi_power_off_prepare(void)
+static int acpi_power_off_prepare(struct system_power_chip *chip)
 {
 	/* Prepare to power off the system */
 	acpi_sleep_prepare(ACPI_STATE_S5);
 	acpi_disable_all_gpes();
 	acpi_os_wait_events_complete();
+
+	return 0;
 }
 
-static void acpi_power_off(void)
+static int acpi_power_off(struct system_power_chip *chip)
 {
 	/* acpi_sleep_prepare(ACPI_STATE_S5) should have already been called */
 	printk(KERN_DEBUG "%s called\n", __func__);
 	local_irq_disable();
 	acpi_enter_sleep_state(ACPI_STATE_S5);
+
+	return 0;
 }
+
+static struct system_power_chip acpi_system_power = {
+	.level = SYSTEM_POWER_LEVEL_SYSTEM,
+	.name = "ACPI",
+	.power_off_prepare = acpi_power_off_prepare,
+	.power_off = acpi_power_off,
+};
 
 int __init acpi_sleep_init(void)
 {
 	char supported[ACPI_S_STATE_COUNT * 3 + 1];
 	char *pos = supported;
-	int i;
+	int i, err;
 
 	acpi_sleep_dmi_check();
 
@@ -1248,9 +1272,12 @@ int __init acpi_sleep_init(void)
 	acpi_sleep_hibernate_setup();
 
 	if (acpi_sleep_state_supported(ACPI_STATE_S5)) {
-		sleep_states[ACPI_STATE_S5] = 1;
-		pm_power_off_prepare = acpi_power_off_prepare;
-		pm_power_off = acpi_power_off;
+		err = system_power_chip_add(&acpi_system_power);
+		if (err < 0)
+			pr_err(PREFIX "failed to add system power chip: %d\n",
+			       err);
+		else
+			sleep_states[ACPI_STATE_S5] = 1;
 	} else {
 		acpi_no_s5 = true;
 	}

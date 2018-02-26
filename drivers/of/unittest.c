@@ -5,6 +5,7 @@
 
 #define pr_fmt(fmt) "### dt-test ### " fmt
 
+#include <linux/bootmem.h>
 #include <linux/clk.h>
 #include <linux/err.h>
 #include <linux/errno.h>
@@ -449,6 +450,125 @@ static void __init of_unittest_parse_phandle_with_args(void)
 	unittest(rc == -EINVAL, "expected:%i got:%i\n", -EINVAL, rc);
 	rc = of_count_phandle_with_args(np, "phandle-list-bad-args",
 					"#phandle-cells");
+	unittest(rc == -EINVAL, "expected:%i got:%i\n", -EINVAL, rc);
+}
+
+static void __init of_unittest_parse_phandle_with_args_map(void)
+{
+	struct device_node *np, *p0, *p1, *p2, *p3;
+	struct of_phandle_args args;
+	int i, rc;
+
+	np = of_find_node_by_path("/testcase-data/phandle-tests/consumer-b");
+	if (!np) {
+		pr_err("missing testcase data\n");
+		return;
+	}
+
+	p0 = of_find_node_by_path("/testcase-data/phandle-tests/provider0");
+	if (!p0) {
+		pr_err("missing testcase data\n");
+		return;
+	}
+
+	p1 = of_find_node_by_path("/testcase-data/phandle-tests/provider1");
+	if (!p1) {
+		pr_err("missing testcase data\n");
+		return;
+	}
+
+	p2 = of_find_node_by_path("/testcase-data/phandle-tests/provider2");
+	if (!p2) {
+		pr_err("missing testcase data\n");
+		return;
+	}
+
+	p3 = of_find_node_by_path("/testcase-data/phandle-tests/provider3");
+	if (!p3) {
+		pr_err("missing testcase data\n");
+		return;
+	}
+
+	rc = of_count_phandle_with_args(np, "phandle-list", "#phandle-cells");
+	unittest(rc == 7, "of_count_phandle_with_args() returned %i, expected 7\n", rc);
+
+	for (i = 0; i < 8; i++) {
+		bool passed = true;
+
+		rc = of_parse_phandle_with_args_map(np, "phandle-list",
+						    "phandle", i, &args);
+
+		/* Test the values from tests-phandle.dtsi */
+		switch (i) {
+		case 0:
+			passed &= !rc;
+			passed &= (args.np == p1);
+			passed &= (args.args_count == 1);
+			passed &= (args.args[0] == 1);
+			break;
+		case 1:
+			passed &= !rc;
+			passed &= (args.np == p3);
+			passed &= (args.args_count == 3);
+			passed &= (args.args[0] == 2);
+			passed &= (args.args[1] == 5);
+			passed &= (args.args[2] == 3);
+			break;
+		case 2:
+			passed &= (rc == -ENOENT);
+			break;
+		case 3:
+			passed &= !rc;
+			passed &= (args.np == p0);
+			passed &= (args.args_count == 0);
+			break;
+		case 4:
+			passed &= !rc;
+			passed &= (args.np == p1);
+			passed &= (args.args_count == 1);
+			passed &= (args.args[0] == 3);
+			break;
+		case 5:
+			passed &= !rc;
+			passed &= (args.np == p0);
+			passed &= (args.args_count == 0);
+			break;
+		case 6:
+			passed &= !rc;
+			passed &= (args.np == p2);
+			passed &= (args.args_count == 2);
+			passed &= (args.args[0] == 15);
+			passed &= (args.args[1] == 0x20);
+			break;
+		case 7:
+			passed &= (rc == -ENOENT);
+			break;
+		default:
+			passed = false;
+		}
+
+		unittest(passed, "index %i - data error on node %s rc=%i\n",
+			 i, args.np->full_name, rc);
+	}
+
+	/* Check for missing list property */
+	rc = of_parse_phandle_with_args_map(np, "phandle-list-missing",
+					    "phandle", 0, &args);
+	unittest(rc == -ENOENT, "expected:%i got:%i\n", -ENOENT, rc);
+
+	/* Check for missing cells,map,mask property */
+	rc = of_parse_phandle_with_args_map(np, "phandle-list",
+					    "phandle-missing", 0, &args);
+	unittest(rc == -EINVAL, "expected:%i got:%i\n", -EINVAL, rc);
+
+	/* Check for bad phandle in list */
+	rc = of_parse_phandle_with_args_map(np, "phandle-list-bad-phandle",
+					    "phandle", 0, &args);
+	unittest(rc == -EINVAL, "expected:%i got:%i\n", -EINVAL, rc);
+
+	/* Check for incorrectly formed argument list */
+	rc = of_parse_phandle_with_args_map(np, "phandle-list-bad-args",
+					    "phandle", 1, &args);
 	unittest(rc == -EINVAL, "expected:%i got:%i\n", -EINVAL, rc);
 }
 
@@ -2053,6 +2173,11 @@ static struct overlay_info overlays[] = {
 
 static struct device_node *overlay_base_root;
 
+static void * __init dt_alloc_memory(u64 size, u64 align)
+{
+	return memblock_virt_alloc(size, align);
+}
+
 /*
  * Create base device tree for the overlay unittest.
  *
@@ -2092,8 +2217,7 @@ void __init unittest_unflatten_overlay_base(void)
 		return;
 	}
 
-	info->data = early_init_dt_alloc_memory_arch(size,
-					     roundup_pow_of_two(FDT_V17_SIZE));
+	info->data = dt_alloc_memory(size, roundup_pow_of_two(FDT_V17_SIZE));
 	if (!info->data) {
 		pr_err("alloc for dtb 'overlay_base' failed");
 		return;
@@ -2102,7 +2226,7 @@ void __init unittest_unflatten_overlay_base(void)
 	memcpy(info->data, info->dtb_begin, size);
 
 	__unflatten_device_tree(info->data, NULL, &info->np_overlay,
-				early_init_dt_alloc_memory_arch, true);
+				dt_alloc_memory, true);
 	overlay_base_root = info->np_overlay;
 }
 
@@ -2354,6 +2478,7 @@ static int __init of_unittest(void)
 	of_unittest_find_node_by_name();
 	of_unittest_dynamic();
 	of_unittest_parse_phandle_with_args();
+	of_unittest_parse_phandle_with_args_map();
 	of_unittest_printf();
 	of_unittest_property_string();
 	of_unittest_property_copy();

@@ -999,6 +999,25 @@
 		};
 	};
 
+	sdhci@700b0000 {
+		power-gpios = <&gpio TEGRA_GPIO(X, 7) GPIO_ACTIVE_HIGH>;
+		mmc-pwrseq = <&sdio_pwrseq>;
+
+		bus-width = <4>;
+		non-removable;
+		disable-wp;
+
+		status = "okay";
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		wifi@1 {
+			compatible = "marvell,sd8797";
+			reg = <1>;
+		};
+	};
+
 	sdhci@700b0400 {
 		cd-gpios = <&gpio TEGRA_GPIO(V, 2) GPIO_ACTIVE_HIGH>;
 		power-gpios = <&gpio TEGRA_GPIO(R, 0) GPIO_ACTIVE_HIGH>;
@@ -1021,6 +1040,8 @@
 	};
 
 	usb@7d000000 {
+		compatible = "nvidia,tegra124-udc";
+		dr_mode = "peripheral";
 		status = "okay";
 	};
 
@@ -1243,6 +1264,11 @@
 			enable-active-high;
 			vin-supply = <&vdd_5v0_sys>;
 		};
+	};
+
+	sdio_pwrseq: power-sequence {
+		compatible = "mmc-pwrseq-simple";
+		reset-gpios = <&gpio TEGRA_GPIO(CC, 5) GPIO_ACTIVE_LOW>;
 	};
 
 	sound {

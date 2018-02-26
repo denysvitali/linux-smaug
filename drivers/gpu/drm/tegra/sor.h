@@ -42,6 +42,7 @@
 #define  SOR_STATE_ASY_CRC_MODE_NON_ACTIVE	(0x2 << 6)
 #define  SOR_STATE_ASY_CRC_MODE_COMPLETE	(0x1 << 6)
 #define  SOR_STATE_ASY_CRC_MODE_ACTIVE		(0x0 << 6)
+#define  SOR_STATE_ASY_SUBOWNER_MASK		(0x3 << 4)
 #define  SOR_STATE_ASY_OWNER_MASK		0xf
 #define  SOR_STATE_ASY_OWNER(x)			(((x) & 0xf) << 0)
 
@@ -89,6 +90,8 @@
 #define SOR_PLL0 0x17
 #define  SOR_PLL0_ICHPMP_MASK			(0xf << 24)
 #define  SOR_PLL0_ICHPMP(x)			(((x) & 0xf) << 24)
+#define  SOR_PLL0_FILTER_MASK			(0xf << 16)
+#define  SOR_PLL0_FILTER(x)			(((x) & 0xf) << 16)
 #define  SOR_PLL0_VCOCAP_MASK			(0xf << 8)
 #define  SOR_PLL0_VCOCAP(x)			(((x) & 0xf) << 8)
 #define  SOR_PLL0_VCOCAP_RST			SOR_PLL0_VCOCAP(3)
@@ -122,10 +125,16 @@
 #define  SOR_PLL2_SEQ_PLL_PULLDOWN		(1 << 16)
 
 #define SOR_PLL3 0x1a
+#define  SOR_PLL3_BG_TEMP_COEF_MASK		(0xf << 28)
+#define  SOR_PLL3_BG_TEMP_COEF(x)		(((x) & 0xf) << 28)
 #define  SOR_PLL3_BG_VREF_LEVEL_MASK		(0xf << 24)
 #define  SOR_PLL3_BG_VREF_LEVEL(x)		(((x) & 0xf) << 24)
 #define  SOR_PLL3_PLL_VDD_MODE_1V8		(0 << 13)
 #define  SOR_PLL3_PLL_VDD_MODE_3V3		(1 << 13)
+#define  SOR_PLL3_AVDD10_LEVEL_MASK		(0xf << 8)
+#define  SOR_PLL3_AVDD10_LEVEL(x)		(((x) & 0xf) << 8)
+#define  SOR_PLL3_AVDD14_LEVEL_MASK		(0xf << 4)
+#define  SOR_PLL3_AVDD14_LEVEL(x)		(((x) & 0xf) << 4)
 
 #define SOR_CSTM 0x1b
 #define  SOR_CSTM_ROTCLK_MASK			(0xf << 24)
@@ -278,10 +287,12 @@
 #define  SOR_DP_PADCTL_CM_TXD_2		(1 << 6)
 #define  SOR_DP_PADCTL_CM_TXD_1		(1 << 5)
 #define  SOR_DP_PADCTL_CM_TXD_0		(1 << 4)
+#define  SOR_DP_PADCTL_CM_TXD(x)	(1 << (4 + (x)))
 #define  SOR_DP_PADCTL_PD_TXD_3		(1 << 3)
 #define  SOR_DP_PADCTL_PD_TXD_0		(1 << 2)
 #define  SOR_DP_PADCTL_PD_TXD_1		(1 << 1)
 #define  SOR_DP_PADCTL_PD_TXD_2		(1 << 0)
+#define  SOR_DP_PADCTL_PD_TXD(x)	(1 << (0 + (x)))
 
 #define SOR_DP_PADCTL1 0x5d
 
@@ -334,6 +345,28 @@
 #define SOR_DP_LQ_CSTM1 0x70
 #define SOR_DP_LQ_CSTM2 0x71
 
+#define SOR_DP_PADCTL2 0x73
+#define  SOR_DP_PADCTL_SPAREPLL_MASK (0xff << 24)
+#define  SOR_DP_PADCTL_SPAREPLL(x) (((x) & 0xff) << 24)
+
+#define SOR_TMDS_HDCP_AN_MSB 0x80
+#define SOR_TMDS_HDCP_AN_LSB 0x81
+
+#define SOR_TMDS_HDCP_AKSV_MSB 0x84
+#define SOR_TMDS_HDCP_AKSV_LSB 0x85
+
+#define SOR_TMDS_HDCP_BKSV_MSB 0x86
+#define SOR_TMDS_HDCP_BKSV_LSB 0x87
+
+#define SOR_TMDS_HDCP_CTRL 0x8c
+#define  SOR_TMDS_HDCP_CTRL_R0 (1 << 9)
+#define  SOR_TMDS_HDCP_CTRL_AN (1 << 8)
+#define  SOR_TMDS_HDCP_CTRL_ONE_ONE (1 << 3)
+#define  SOR_TMDS_HDCP_CTRL_CRYPT (1 << 1)
+#define  SOR_TMDS_HDCP_CTRL_RUN (1 << 0)
+
+#define SOR_TMDS_HDCP_RI 0x93
+
 #define SOR_HDMI_AUDIO_INFOFRAME_CTRL 0x9a
 #define SOR_HDMI_AUDIO_INFOFRAME_STATUS 0x9b
 #define SOR_HDMI_AUDIO_INFOFRAME_HEADER 0x9c
@@ -366,8 +399,29 @@
 #define  SOR_INPUT_CONTROL_ARM_VIDEO_RANGE_LIMITED (1 << 1)
 #define  SOR_INPUT_CONTROL_HDMI_SRC_SELECT(x) (((x) & 0x1) << 0)
 
+#define SOR_KEY_CTRL 0xea
+#define  SOR_KEY_CTRL_LOAD_ADDRESS_MASK (0x3ff << 12)
+#define  SOR_KEY_CTRL_PKEY_LOADED (1 << 6)
+#define  SOR_KEY_CTRL_PKEY_REQUEST_RELOAD (1 << 5)
+#define  SOR_KEY_CTRL_WRITE16 (1 << 4)
+#define  SOR_KEY_CTRL_AUTOINC (1 << 1)
+#define  SOR_KEY_CTRL_LOCAL_KEYS (1 << 0)
+
+#define SOR_KEY_HDCP_KEY_0 0xee
+#define SOR_KEY_HDCP_KEY_1 0xef
+#define SOR_KEY_HDCP_KEY_2 0xf0
+#define SOR_KEY_HDCP_KEY_3 0xf1
+#define SOR_KEY_HDCP_KEY_TRIG 0xf2
+#define  SOR_KEY_HDCP_KEY_TRIG_LOAD (1 << 8)
+
+#define SOR_KEY_SKEY_INDEX 0xf3
+
 #define SOR_HDMI_VSI_INFOFRAME_CTRL 0x123
 #define SOR_HDMI_VSI_INFOFRAME_STATUS 0x124
 #define SOR_HDMI_VSI_INFOFRAME_HEADER 0x125
+
+#define SOR_HDMI2_CTRL 0x13e
+#define  SOR_HDMI2_CTRL_CLOCK_MODE_DIV_BY_4 (1 << 1)
+#define  SOR_HDMI2_CTRL_SCRAMBLE (1 << 0)
 
 #endif

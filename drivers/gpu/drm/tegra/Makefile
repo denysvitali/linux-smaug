@@ -5,7 +5,10 @@ tegra-drm-y := \
 	drm.o \
 	gem.o \
 	fb.o \
+	hub.o \
+	plane.o \
 	dc.o \
+	dp.o \
 	output.o \
 	rgb.o \
 	hdmi.o \

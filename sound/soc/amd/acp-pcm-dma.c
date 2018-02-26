@@ -23,6 +23,8 @@
 #include <drm/amd_asic_type.h>
 #include "acp.h"
 
+#define DRV_NAME "acp_audio_dma"
+
 #define PLAYBACK_MIN_NUM_PERIODS    2
 #define PLAYBACK_MAX_NUM_PERIODS    2
 #define PLAYBACK_MAX_PERIOD_SIZE    16384
@@ -702,8 +704,8 @@ static int acp_dma_open(struct snd_pcm_substream *substream)
 	int ret = 0;
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct snd_soc_pcm_runtime *prtd = substream->private_data;
-	struct audio_drv_data *intr_data = dev_get_drvdata(prtd->platform->dev);
-
+	struct snd_soc_component *component = snd_soc_rtdcom_lookup(prtd, DRV_NAME);
+	struct audio_drv_data *intr_data = dev_get_drvdata(component->dev);
 	struct audio_substream_data *adata =
 		kzalloc(sizeof(struct audio_substream_data), GFP_KERNEL);
 	if (adata == NULL)
@@ -730,7 +732,7 @@ static int acp_dma_open(struct snd_pcm_substream *substream)
 	ret = snd_pcm_hw_constraint_integer(runtime,
 					    SNDRV_PCM_HW_PARAM_PERIODS);
 	if (ret < 0) {
-		dev_err(prtd->platform->dev, "set integer constraint failed\n");
+		dev_err(component->dev, "set integer constraint failed\n");
 		kfree(adata);
 		return ret;
 	}
@@ -778,7 +780,8 @@ static int acp_dma_hw_params(struct snd_pcm_substream *substream,
 	struct snd_pcm_runtime *runtime;
 	struct audio_substream_data *rtd;
 	struct snd_soc_pcm_runtime *prtd = substream->private_data;
-	struct audio_drv_data *adata = dev_get_drvdata(prtd->platform->dev);
+	struct snd_soc_component *component = snd_soc_rtdcom_lookup(prtd, DRV_NAME);
+	struct audio_drv_data *adata = dev_get_drvdata(component->dev);
 
 	runtime = substream->runtime;
 	rtd = runtime->private_data;
@@ -850,6 +853,9 @@ static snd_pcm_uframes_t acp_dma_pointer(struct snd_pcm_substream *substream)
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct audio_substream_data *rtd = runtime->private_data;
 
+	if (!rtd)
+		return -EINVAL;
+
 	buffersize = frames_to_bytes(runtime, runtime->buffer_size);
 	bytescount = acp_get_byte_count(rtd->acp_mmio, substream->stream);
 
@@ -875,6 +881,8 @@ static int acp_dma_prepare(struct snd_pcm_substream *substream)
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct audio_substream_data *rtd = runtime->private_data;
 
+	if (!rtd)
+		return -EINVAL;
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 		config_acp_dma_channel(rtd->acp_mmio, SYSRAM_TO_ACP_CH_NUM,
 					PLAYBACK_START_DMA_DESCR_CH12,
@@ -902,6 +910,7 @@ static int acp_dma_trigger(struct snd_pcm_substream *substream, int cmd)
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct snd_soc_pcm_runtime *prtd = substream->private_data;
 	struct audio_substream_data *rtd = runtime->private_data;
+	struct snd_soc_component *component = snd_soc_rtdcom_lookup(prtd, DRV_NAME);
 
 	if (!rtd)
 		return -EINVAL;
@@ -919,7 +928,7 @@ static int acp_dma_trigger(struct snd_pcm_substream *substream, int cmd)
 			while (acp_reg_read(rtd->acp_mmio, mmACP_DMA_CH_STS) &
 						BIT(SYSRAM_TO_ACP_CH_NUM)) {
 				if (!loops--) {
-					dev_err(prtd->platform->dev,
+					dev_err(component->dev,
 						"acp dma start timeout\n");
 					return -ETIMEDOUT;
 				}
@@ -965,7 +974,8 @@ static int acp_dma_trigger(struct snd_pcm_substream *substream, int cmd)
 static int acp_dma_new(struct snd_soc_pcm_runtime *rtd)
 {
 	int ret;
-	struct audio_drv_data *adata = dev_get_drvdata(rtd->platform->dev);
+	struct snd_soc_component *component = snd_soc_rtdcom_lookup(rtd, DRV_NAME);
+	struct audio_drv_data *adata = dev_get_drvdata(component->dev);
 
 	switch (adata->asic_type) {
 	case CHIP_STONEY:
@@ -982,7 +992,7 @@ static int acp_dma_new(struct snd_soc_pcm_runtime *rtd)
 		break;
 	}
 	if (ret < 0)
-		dev_err(rtd->platform->dev,
+		dev_err(component->dev,
 				"buffer preallocation failer error:%d\n", ret);
 	return ret;
 }
@@ -993,7 +1003,8 @@ static int acp_dma_close(struct snd_pcm_substream *substream)
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct audio_substream_data *rtd = runtime->private_data;
 	struct snd_soc_pcm_runtime *prtd = substream->private_data;
-	struct audio_drv_data *adata = dev_get_drvdata(prtd->platform->dev);
+	struct snd_soc_component *component = snd_soc_rtdcom_lookup(prtd, DRV_NAME);
+	struct audio_drv_data *adata = dev_get_drvdata(component->dev);
 
 	kfree(rtd);
 
@@ -1039,7 +1050,8 @@ static const struct snd_pcm_ops acp_dma_ops = {
 	.prepare = acp_dma_prepare,
 };
 
-static struct snd_soc_platform_driver acp_asoc_platform = {
+static struct snd_soc_component_driver acp_asoc_platform = {
+	.name = DRV_NAME,
 	.ops = &acp_dma_ops,
 	.pcm_new = acp_dma_new,
 };
@@ -1091,9 +1103,14 @@ static int acp_audio_probe(struct platform_device *pdev)
 	dev_set_drvdata(&pdev->dev, audio_drv_data);
 
 	/* Initialize the ACP */
-	acp_init(audio_drv_data->acp_mmio, audio_drv_data->asic_type);
+	status = acp_init(audio_drv_data->acp_mmio, audio_drv_data->asic_type);
+	if (status) {
+		dev_err(&pdev->dev, "ACP Init failed status:%d\n", status);
+		return status;
+	}
 
-	status = snd_soc_register_platform(&pdev->dev, &acp_asoc_platform);
+	status = devm_snd_soc_register_component(&pdev->dev,
+						&acp_asoc_platform, NULL, 0);
 	if (status != 0) {
 		dev_err(&pdev->dev, "Fail to register ALSA platform device\n");
 		return status;
@@ -1108,10 +1125,12 @@ static int acp_audio_probe(struct platform_device *pdev)
 
 static int acp_audio_remove(struct platform_device *pdev)
 {
+	int status;
 	struct audio_drv_data *adata = dev_get_drvdata(&pdev->dev);
 
-	acp_deinit(adata->acp_mmio);
-	snd_soc_unregister_platform(&pdev->dev);
+	status = acp_deinit(adata->acp_mmio);
+	if (status)
+		dev_err(&pdev->dev, "ACP Deinit failed status:%d\n", status);
 	pm_runtime_disable(&pdev->dev);
 
 	return 0;
@@ -1120,9 +1139,14 @@ static int acp_audio_remove(struct platform_device *pdev)
 static int acp_pcm_resume(struct device *dev)
 {
 	u16 bank;
+	int status;
 	struct audio_drv_data *adata = dev_get_drvdata(dev);
 
-	acp_init(adata->acp_mmio, adata->asic_type);
+	status = acp_init(adata->acp_mmio, adata->asic_type);
+	if (status) {
+		dev_err(dev, "ACP Init failed status:%d\n", status);
+		return status;
+	}
 
 	if (adata->play_stream && adata->play_stream->runtime) {
 		/* For Stoney, Memory gating is disabled,i.e SRAM Banks
@@ -1154,18 +1178,26 @@ static int acp_pcm_resume(struct device *dev)
 
 static int acp_pcm_runtime_suspend(struct device *dev)
 {
+	int status;
 	struct audio_drv_data *adata = dev_get_drvdata(dev);
 
-	acp_deinit(adata->acp_mmio);
+	status = acp_deinit(adata->acp_mmio);
+	if (status)
+		dev_err(dev, "ACP Deinit failed status:%d\n", status);
 	acp_reg_write(0, adata->acp_mmio, mmACP_EXTERNAL_INTR_ENB);
 	return 0;
 }
 
 static int acp_pcm_runtime_resume(struct device *dev)
 {
+	int status;
 	struct audio_drv_data *adata = dev_get_drvdata(dev);
 
-	acp_init(adata->acp_mmio, adata->asic_type);
+	status = acp_init(adata->acp_mmio, adata->asic_type);
+	if (status) {
+		dev_err(dev, "ACP Init failed status:%d\n", status);
+		return status;
+	}
 	acp_reg_write(1, adata->acp_mmio, mmACP_EXTERNAL_INTR_ENB);
 	return 0;
 }

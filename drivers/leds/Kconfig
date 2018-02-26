@@ -69,7 +69,7 @@ config LEDS_APU
 	  module will be called leds-apu.
 
 config LEDS_AS3645A
-	tristate "AS3645A LED flash controller support"
+	tristate "AS3645A and LM3555 LED flash controllers support"
 	depends on I2C && LEDS_CLASS_FLASH
 	depends on V4L2_FLASH_LED_CLASS || !V4L2_FLASH_LED_CLASS
 	help
@@ -137,6 +137,13 @@ config LEDS_LM3642
 	  converter plus 1.5A constant current driver for a high-current
 	  white LED.
 
+config LEDS_LM3692X
+	tristate "LED support for LM3692x Chips"
+	depends on LEDS_CLASS && I2C && OF
+	select REGMAP_I2C
+	help
+	  This option enables support for the TI LM3692x family
+	  of white LED string drivers used for backlighting.
 
 config LEDS_LOCOMO
 	tristate "LED Support for Locomo device"
@@ -347,7 +354,7 @@ config LEDS_LP8788
 
 config LEDS_LP8860
 	tristate "LED support for the TI LP8860 4 channel LED driver"
-	depends on LEDS_CLASS && I2C
+	depends on LEDS_CLASS && I2C && OF
 	select REGMAP_I2C
 	help
 	  If you say yes here you get support for the TI LP8860 4 channel
@@ -587,12 +594,12 @@ config LEDS_MAX8997
 	  MAXIM MAX8997 PMIC.
 
 config LEDS_LM355x
-	tristate "LED support for LM355x Chips, LM3554 and LM3556"
+	tristate "LED support for LM3554 and LM3556 chips"
 	depends on LEDS_CLASS && I2C
 	select REGMAP_I2C
 	help
-	  This option enables support for LEDs connected to LM355x.
-	  LM355x includes Torch, Flash and Indicator functions.
+	  This option enables support for LEDs connected to LM3554
+	  and LM3556. It includes Torch, Flash and Indicator functions.
 
 config LEDS_OT200
 	tristate "LED support for the Bachmann OT200"
@@ -681,7 +688,7 @@ config LEDS_PM8058
 
 config LEDS_MLXCPLD
 	tristate "LED support for the Mellanox boards"
-	depends on X86_64 && DMI
+	depends on X86 && DMI
 	depends on LEDS_CLASS
 	help
 	  This option enabled support for the LEDs on the Mellanox

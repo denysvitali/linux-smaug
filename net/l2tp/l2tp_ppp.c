@@ -870,7 +870,7 @@ err:
 /* getname() support.
  */
 static int pppol2tp_getname(struct socket *sock, struct sockaddr *uaddr,
-			    int *usockaddr_len, int peer)
+			    int peer)
 {
 	int len = 0;
 	int error = 0;
@@ -969,8 +969,7 @@ static int pppol2tp_getname(struct socket *sock, struct sockaddr *uaddr,
 		memcpy(uaddr, &sp, len);
 	}
 
-	*usockaddr_len = len;
-	error = 0;
+	error = len;
 
 	sock_put(sk);
 end:
@@ -1734,7 +1733,6 @@ static int pppol2tp_proc_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations pppol2tp_proc_fops = {
-	.owner		= THIS_MODULE,
 	.open		= pppol2tp_proc_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,

@@ -135,7 +135,7 @@ EXPORT_SYMBOL(overflowgid);
  */
 
 int fs_overflowuid = DEFAULT_FS_OVERFLOWUID;
-int fs_overflowgid = DEFAULT_FS_OVERFLOWUID;
+int fs_overflowgid = DEFAULT_FS_OVERFLOWGID;
 
 EXPORT_SYMBOL(fs_overflowuid);
 EXPORT_SYMBOL(fs_overflowgid);
@@ -2212,6 +2212,17 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 		break;
 	case PR_GET_PDEATHSIG:
 		error = put_user(me->pdeath_signal, (int __user *)arg2);
+		break;
+	case PR_SET_PDEATHSIG_PROC:
+		if (!valid_signal(arg2)) {
+			error = -EINVAL;
+			break;
+		}
+		me->signal->pdeath_signal_proc = arg2;
+		break;
+	case PR_GET_PDEATHSIG_PROC:
+		error = put_user(me->signal->pdeath_signal_proc,
+				 (int __user *)arg2);
 		break;
 	case PR_GET_DUMPABLE:
 		error = get_dumpable(me->mm);

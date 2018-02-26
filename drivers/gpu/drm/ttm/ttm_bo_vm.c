@@ -92,6 +92,18 @@ out_unlock:
 	return ret;
 }
 
+static unsigned long ttm_bo_io_mem_pfn(struct ttm_buffer_object *bo,
+				       unsigned long page_offset)
+{
+	struct ttm_bo_device *bdev = bo->bdev;
+
+	if (bdev->driver->io_mem_pfn)
+		return bdev->driver->io_mem_pfn(bo, page_offset);
+
+	return ((bo->mem.bus.base + bo->mem.bus.offset) >> PAGE_SHIFT)
+		+ page_offset;
+}
+
 static int ttm_bo_vm_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
@@ -110,6 +122,8 @@ static int ttm_bo_vm_fault(struct vm_fault *vmf)
 	struct ttm_mem_type_manager *man =
 		&bdev->man[bo->mem.mem_type];
 	struct vm_area_struct cvma;
+
+	//pr_info("> %s(vmf=%p)\n", __func__, vmf);
 
 	/*
 	 * Work around locking order reversal in fault / nopfn
@@ -146,6 +160,7 @@ static int ttm_bo_vm_fault(struct vm_fault *vmf)
 	 * (if at all) by redirecting mmap to the exporter.
 	 */
 	if (bo->ttm && (bo->ttm->page_flags & TTM_PAGE_FLAG_SG)) {
+		//pr_info("  refusing to fault imported pages\n");
 		retval = VM_FAULT_SIGBUS;
 		goto out_unlock;
 	}
@@ -189,6 +204,7 @@ static int ttm_bo_vm_fault(struct vm_fault *vmf)
 	}
 	ret = ttm_mem_io_reserve_vm(bo);
 	if (unlikely(ret != 0)) {
+		//pr_info("  ttm_mem_io_reserve_vm(): %d\n", ret);
 		retval = VM_FAULT_SIGBUS;
 		goto out_io_unlock;
 	}
@@ -199,6 +215,7 @@ static int ttm_bo_vm_fault(struct vm_fault *vmf)
 		drm_vma_node_start(&bo->vma_node);
 
 	if (unlikely(page_offset >= bo->num_pages)) {
+		//pr_info("  page_offset: %lu bo->num_pages: %lu\n", page_offset, bo->num_pages);
 		retval = VM_FAULT_SIGBUS;
 		goto out_io_unlock;
 	}
@@ -215,12 +232,17 @@ static int ttm_bo_vm_fault(struct vm_fault *vmf)
 		cvma.vm_page_prot = ttm_io_prot(bo->mem.placement,
 						cvma.vm_page_prot);
 	} else {
+		struct ttm_operation_ctx ctx = {
+			.interruptible = false,
+			.no_wait_gpu = false
+		};
+
 		ttm = bo->ttm;
 		cvma.vm_page_prot = ttm_io_prot(bo->mem.placement,
 						cvma.vm_page_prot);
 
 		/* Allocate all page at once, most common usage */
-		if (ttm->bdev->driver->ttm_tt_populate(ttm)) {
+		if (ttm->bdev->driver->ttm_tt_populate(ttm, &ctx)) {
 			retval = VM_FAULT_OOM;
 			goto out_io_unlock;
 		}
@@ -234,7 +256,7 @@ static int ttm_bo_vm_fault(struct vm_fault *vmf)
 		if (bo->mem.bus.is_iomem) {
 			/* Iomem should not be marked encrypted */
 			cvma.vm_page_prot = pgprot_decrypted(cvma.vm_page_prot);
-			pfn = bdev->driver->io_mem_pfn(bo, page_offset);
+			pfn = ttm_bo_io_mem_pfn(bo, page_offset);
 		} else {
 			page = ttm->pages[page_offset];
 			if (unlikely(!page && i == 0)) {
@@ -276,6 +298,7 @@ out_io_unlock:
 	ttm_mem_io_unlock(man);
 out_unlock:
 	ttm_bo_unreserve(bo);
+	//pr_info("< %s() = %d\n", __func__, retval);
 	return retval;
 }
 
@@ -299,7 +322,7 @@ static void ttm_bo_vm_close(struct vm_area_struct *vma)
 
 static int ttm_bo_vm_access_kmap(struct ttm_buffer_object *bo,
 				 unsigned long offset,
-				 void *buf, int len, int write)
+				 uint8_t *buf, int len, int write)
 {
 	unsigned long page = offset >> PAGE_SHIFT;
 	unsigned long bytes_left = len;
@@ -328,6 +351,7 @@ static int ttm_bo_vm_access_kmap(struct ttm_buffer_object *bo,
 		ttm_bo_kunmap(&map);
 
 		page++;
+		buf += bytes;
 		bytes_left -= bytes;
 		offset = 0;
 	} while (bytes_left);
@@ -403,14 +427,6 @@ static struct ttm_buffer_object *ttm_bo_vm_lookup(struct ttm_bo_device *bdev,
 
 	return bo;
 }
-
-unsigned long ttm_bo_default_io_mem_pfn(struct ttm_buffer_object *bo,
-					unsigned long page_offset)
-{
-	return ((bo->mem.bus.base + bo->mem.bus.offset) >> PAGE_SHIFT)
-		+ page_offset;
-}
-EXPORT_SYMBOL(ttm_bo_default_io_mem_pfn);
 
 int ttm_bo_mmap(struct file *filp, struct vm_area_struct *vma,
 		struct ttm_bo_device *bdev)

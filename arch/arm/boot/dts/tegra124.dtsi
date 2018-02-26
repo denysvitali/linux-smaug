@@ -148,6 +148,10 @@
 			clock-names = "sor", "parent", "dp", "safe";
 			resets = <&tegra_car 182>;
 			reset-names = "sor";
+			pinctrl-0 = <&state_dpaux_aux>;
+			pinctrl-1 = <&state_dpaux_i2c>;
+			pinctrl-2 = <&state_dpaux_off>;
+			pinctrl-names = "aux", "i2c", "off";
 			status = "disabled";
 		};
 
@@ -161,6 +165,21 @@
 			resets = <&tegra_car 181>;
 			reset-names = "dpaux";
 			status = "disabled";
+
+			state_dpaux_aux: pinmux-aux {
+				groups = "dpaux-io";
+				function = "aux";
+			};
+
+			state_dpaux_i2c: pinmux-i2c {
+				groups = "dpaux-io";
+				function = "i2c";
+			};
+
+			state_dpaux_off: pinmux-off {
+				groups = "dpaux-io";
+				function = "off";
+			};
 		};
 	};
 
@@ -593,6 +612,15 @@
 		clock-names = "fuse";
 		resets = <&tegra_car 39>;
 		reset-names = "fuse";
+	};
+
+	kfuse: kfuse@7000fc00 {
+		compatible = "nvidia,tegra124-kfuse", "nvidia,tegra114-kfuse";
+		reg = <0x0 0x7000fc00 0x0 0x400>;
+		clocks = <&tegra_car TEGRA124_CLK_KFUSE>;
+		clock-names = "kfuse";
+		resets = <&tegra_car 40>;
+		reset-names = "kfuse";
 	};
 
 	mc: memory-controller@70019000 {
@@ -1029,6 +1057,7 @@
 		compatible = "nvidia,tegra124-usb-phy", "nvidia,tegra30-usb-phy";
 		reg = <0x0 0x7d000000 0x0 0x4000>,
 		      <0x0 0x7d000000 0x0 0x4000>;
+		interrupts = <GIC_SPI 20 IRQ_TYPE_LEVEL_HIGH>;
 		phy_type = "utmi";
 		clocks = <&tegra_car TEGRA124_CLK_USBD>,
 			 <&tegra_car TEGRA124_CLK_PLL_U>,

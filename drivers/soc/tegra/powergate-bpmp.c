@@ -11,6 +11,7 @@
  * more details.
  */
 
+#define DEBUG
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/pm_domain.h>
@@ -19,6 +20,9 @@
 
 #include <soc/tegra/bpmp.h>
 #include <soc/tegra/bpmp-abi.h>
+
+/* XXX */
+#include <dt-bindings/power/tegra186-powergate.h>
 
 struct tegra_powergate_info {
 	unsigned int id;
@@ -159,18 +163,32 @@ static int tegra_powergate_power_on(struct generic_pm_domain *domain)
 {
 	struct tegra_powergate *powergate = to_tegra_powergate(domain);
 	struct tegra_bpmp *bpmp = powergate->bpmp;
+	int err;
 
-	return tegra_bpmp_powergate_set_state(bpmp, powergate->id,
-					      PG_STATE_ON);
+	dev_dbg(bpmp->dev, "> %s(domain=%p)\n", __func__, domain);
+	dev_dbg(bpmp->dev, "  domain: %s\n", domain->name);
+
+	err = tegra_bpmp_powergate_set_state(bpmp, powergate->id,
+					     PG_STATE_ON);
+
+	dev_dbg(bpmp->dev, "< %s() = %d\n", __func__, err);
+	return err;
 }
 
 static int tegra_powergate_power_off(struct generic_pm_domain *domain)
 {
 	struct tegra_powergate *powergate = to_tegra_powergate(domain);
 	struct tegra_bpmp *bpmp = powergate->bpmp;
+	int err;
 
-	return tegra_bpmp_powergate_set_state(bpmp, powergate->id,
-					      PG_STATE_OFF);
+	dev_dbg(bpmp->dev, "> %s(domain=%p)\n", __func__, domain);
+	dev_dbg(bpmp->dev, "  domain: %s\n", domain->name);
+
+	err = tegra_bpmp_powergate_set_state(bpmp, powergate->id,
+					     PG_STATE_OFF);
+
+	dev_dbg(bpmp->dev, "< %s() = %d\n", __func__, err);
+	return err;
 }
 
 static struct tegra_powergate *
@@ -198,6 +216,15 @@ tegra_powergate_add(struct tegra_bpmp *bpmp,
 	if (err < 0) {
 		kfree(powergate->genpd.name);
 		return ERR_PTR(err);
+	}
+
+	switch (powergate->id) {
+	case TEGRA186_POWER_DOMAIN_XUSBA:
+	case TEGRA186_POWER_DOMAIN_XUSBB:
+	case TEGRA186_POWER_DOMAIN_XUSBC:
+		err = tegra_powergate_power_on(&powergate->genpd);
+		dev_info(bpmp->dev, "power domain %s powered on: %d\n", powergate->genpd.name, err);
+		break;
 	}
 
 	return powergate;

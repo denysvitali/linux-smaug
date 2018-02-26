@@ -3,6 +3,7 @@
 #include <dt-bindings/gpio/tegra186-gpio.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/mailbox/tegra186-hsp.h>
+#include <dt-bindings/memory/tegra186-mc.h>
 #include <dt-bindings/power/tegra186-powergate.h>
 #include <dt-bindings/reset/tegra186-reset.h>
 #include <dt-bindings/thermal/tegra186-bpmp-thermal.h>
@@ -12,6 +13,12 @@
 	interrupt-parent = <&gic>;
 	#address-cells = <2>;
 	#size-cells = <2>;
+
+	misc@100000 {
+		compatible = "nvidia,tegra186-misc";
+		reg = <0x0 0x00100000 0x0 0xf000>,
+		      <0x0 0x0010f000 0x0 0x1000>;
+	};
 
 	gpio: gpio@2200000 {
 		compatible = "nvidia,tegra186-gpio";
@@ -54,11 +61,19 @@
 		reset-names = "eqos";
 		status = "disabled";
 
+		//iommus = <&smmu TEGRA186_SID_EQOS>;
+
 		snps,write-requests = <1>;
 		snps,read-requests = <3>;
 		snps,burst-map = <0x7>;
 		snps,txpbl = <32>;
 		snps,rxpbl = <8>;
+	};
+
+	memory-controller@2c00000 {
+		compatible = "nvidia,tegra186-mc";
+		reg = <0x0 0x02c00000 0x0 0xb0000>;
+		status = "disabled";
 	};
 
 	uarta: serial@3100000 {
@@ -224,6 +239,8 @@
 		resets = <&bpmp TEGRA186_RESET_SDMMC1>;
 		reset-names = "sdhci";
 		status = "disabled";
+
+		iommus = <&smmu TEGRA186_SID_SDMMC1>;
 	};
 
 	sdmmc2: sdhci@3420000 {
@@ -235,6 +252,8 @@
 		resets = <&bpmp TEGRA186_RESET_SDMMC2>;
 		reset-names = "sdhci";
 		status = "disabled";
+
+		iommus = <&smmu TEGRA186_SID_SDMMC2>;
 	};
 
 	sdmmc3: sdhci@3440000 {
@@ -246,6 +265,8 @@
 		resets = <&bpmp TEGRA186_RESET_SDMMC3>;
 		reset-names = "sdhci";
 		status = "disabled";
+
+		iommus = <&smmu TEGRA186_SID_SDMMC3>;
 	};
 
 	sdmmc4: sdhci@3460000 {
@@ -257,6 +278,175 @@
 		resets = <&bpmp TEGRA186_RESET_SDMMC4>;
 		reset-names = "sdhci";
 		status = "disabled";
+
+		iommus = <&smmu TEGRA186_SID_SDMMC4>;
+	};
+
+	padctl: padctl@3520000 {
+		compatible = "nvidia,tegra186-xusb-padctl";
+		reg = <0x0 0x03520000 0x0 0x1000>,
+		      <0x0 0x03540000 0x0 0x1000>;
+		reg-names = "padctl", "ao";
+
+		resets = <&bpmp TEGRA186_RESET_XUSB_PADCTL>;
+		reset-names = "padctl";
+
+		status = "disabled";
+
+		pads {
+			usb2 {
+				clocks = <&bpmp TEGRA186_CLK_USB2_TRK>;
+				clock-names = "trk";
+				status = "disabled";
+
+				lanes {
+					usb2-0 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+
+					usb2-1 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+
+					usb2-2 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+				};
+			};
+
+			hsic {
+				clocks = <&bpmp TEGRA186_CLK_HSIC_TRK>;
+				clock-names = "trk";
+				status = "disabled";
+
+				lanes {
+					hsic-0 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+				};
+			};
+
+			usb3 {
+				status = "disabled";
+
+				lanes {
+					usb3-0 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+
+					usb3-1 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+
+					usb3-2 {
+						status = "disabled";
+						#phy-cells = <0>;
+					};
+				};
+			};
+		};
+
+		ports {
+			usb2-0 {
+				status = "disabled";
+			};
+
+			usb2-1 {
+				status = "disabled";
+			};
+
+			usb2-2 {
+				status = "disabled";
+			};
+
+			hsic-0 {
+				status = "disabled";
+			};
+
+			usb3-0 {
+				status = "disabled";
+			};
+
+			usb3-1 {
+				status = "disabled";
+			};
+
+			usb3-2 {
+				status = "disabled";
+			};
+		};
+	};
+
+	usb@3530000 {
+		compatible = "nvidia,tegra186-xusb";
+		reg = <0x0 0x03530000 0x0 0x8000>,
+		      <0x0 0x03538000 0x0 0x1000>;
+		reg-names = "hcd", "fpci";
+
+		interrupts = <GIC_SPI 163 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 164 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 167 IRQ_TYPE_LEVEL_HIGH>;
+
+		clocks = <&bpmp TEGRA186_CLK_XUSB_HOST>,
+			 <&bpmp TEGRA186_CLK_XUSB_FALCON>,
+			 <&bpmp TEGRA186_CLK_XUSB_SS>,
+			 <&bpmp TEGRA186_CLK_XUSB_CORE_SS>,
+			 <&bpmp TEGRA186_CLK_CLK_M>,
+			 <&bpmp TEGRA186_CLK_XUSB_FS>,
+			 <&bpmp TEGRA186_CLK_PLLU>,
+			 <&bpmp TEGRA186_CLK_CLK_M>,
+			 <&bpmp TEGRA186_CLK_PLLE>;
+		clock-names = "xusb_host", "xusb_falcon_src", "xusb_ss",
+			      "xusb_ss_src", "xusb_hs_src", "xusb_fs_src",
+			      "pll_u_480m", "clk_m", "pll_e";
+
+		power-domains = <&bpmp TEGRA186_POWER_DOMAIN_XUSBC>,
+				<&bpmp TEGRA186_POWER_DOMAIN_XUSBA>;
+		nvidia,xusb-padctl = <&padctl>;
+
+		status = "disabled";
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+	};
+
+	udc@3550000 {
+		compatible = "nvidia,tegra186-xudc";
+		reg = <0x0 0x03550000 0x0 0x8000>,
+		      <0x0 0x03558000 0x0 0x1000>;
+		interrupts = <GIC_SPI 166 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&bpmp TEGRA186_CLK_PLLU>,
+			 <&bpmp TEGRA186_CLK_XUSB_DEV>,
+			 <&bpmp TEGRA186_CLK_XUSB_SS>,
+			 <&bpmp TEGRA186_CLK_PLLE>;
+		clock-names = "pll_u_480m", "dev", "ss", "pll_e";
+		status = "disabled";
+
+		power-domains = <&bpmp TEGRA186_POWER_DOMAIN_XUSBB>,
+				<&bpmp TEGRA186_POWER_DOMAIN_XUSBA>;
+		nvidia,xusb-padctl = <&padctl>;
+	};
+
+	fuse@3820000 {
+		compatible = "nvidia,tegra186-efuse";
+		reg = <0x0 0x03820000 0x0 0x10000>;
+		clocks = <&bpmp TEGRA186_CLK_FUSE>;
+		clock-names = "fuse";
+	};
+
+	kfuse: kfuse@3830000 {
+		compatible = "nvidia,tegra186-kfuse";
+		reg = <0x0 0x03830000 0x0 0x10000>;
+		clocks = <&bpmp TEGRA186_CLK_KFUSE>;
+		clock-names = "kfuse";
+		resets = <&bpmp TEGRA186_RESET_KFUSE>;
+		reset-names = "kfuse";
 	};
 
 	gic: interrupt-controller@3881000 {
@@ -437,6 +627,79 @@
 		};
 	};
 
+	smmu: iommu@12000000 {
+		compatible = "arm,mmu-500";
+		reg = <0 0x12000000 0 0x800000>;
+		interrupts = <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 170 IRQ_TYPE_LEVEL_HIGH>;
+		stream-match-mask = <0x7f80>;
+		#global-interrupts = <1>;
+		#iommu-cells = <1>;
+	};
+
 	host1x@13e00000 {
 		compatible = "nvidia,tegra186-host1x", "simple-bus";
 		reg = <0x0 0x13e00000 0x0 0x10000>,
@@ -453,6 +716,140 @@
 		#size-cells = <1>;
 
 		ranges = <0x15000000 0x0 0x15000000 0x01000000>;
+		iommus = <&smmu TEGRA186_SID_HOST1X>;
+
+		dpaux1: dpaux@15040000 {
+			compatible = "nvidia,tegra186-dpaux";
+			reg = <0x15040000 0x10000>;
+			interrupts = <GIC_SPI 160 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&bpmp TEGRA186_CLK_DPAUX1>,
+				 <&bpmp TEGRA186_CLK_PLLDP>;
+			clock-names = "dpaux", "parent";
+			resets = <&bpmp TEGRA186_RESET_DPAUX1>;
+			reset-names = "dpaux";
+			status = "disabled";
+
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_DISP>;
+
+			state_dpaux1_aux: pinmux-aux {
+				groups = "dpaux-io";
+				function = "aux";
+			};
+
+			state_dpaux1_i2c: pinmux-i2c {
+				groups = "dpaux-io";
+				function = "i2c";
+			};
+
+			state_dpaux1_off: pinmux-off {
+				groups = "dpaux-io";
+				function = "off";
+			};
+
+			i2c-bus {
+				#address-cells = <1>;
+				#size-cells = <0>;
+			};
+		};
+
+		tsec@15100000 {
+			compatible = "nvidia,tegra186-tsec";
+			reg = <0x15100000 0x10000>;
+			interrupts = <GIC_SPI 229 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&bpmp TEGRA186_CLK_TSECB>;
+			clock-names = "tsec";
+			resets = <&bpmp TEGRA186_RESET_TSECB>;
+			reset-names = "tsec";
+			status = "disabled";
+		};
+
+		display-hub@15200000 {
+			compatible = "nvidia,tegra186-display", "simple-bus";
+			resets = <&bpmp TEGRA186_RESET_NVDISPLAY0_MISC>,
+				 <&bpmp TEGRA186_RESET_NVDISPLAY0_WGRP0>,
+				 <&bpmp TEGRA186_RESET_NVDISPLAY0_WGRP1>,
+				 <&bpmp TEGRA186_RESET_NVDISPLAY0_WGRP2>,
+				 <&bpmp TEGRA186_RESET_NVDISPLAY0_WGRP3>,
+				 <&bpmp TEGRA186_RESET_NVDISPLAY0_WGRP4>,
+				 <&bpmp TEGRA186_RESET_NVDISPLAY0_WGRP5>;
+			reset-names = "misc", "wgrp0", "wgrp1", "wgrp2",
+				      "wgrp3", "wgrp4", "wgrp5";
+			clocks = <&bpmp TEGRA186_CLK_NVDISPLAY_DISP>,
+				 <&bpmp TEGRA186_CLK_NVDISPLAY_DSC>,
+				 <&bpmp TEGRA186_CLK_NVDISPLAYHUB>;
+			clock-names = "disp", "dsc", "hub";
+			status = "disabled";
+
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_DISP>;
+
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			ranges = <0x15200000 0x15200000 0x40000>;
+
+			display@15200000 {
+				compatible = "nvidia,tegra186-dc";
+				reg = <0x15200000 0x10000>;
+				interrupts = <GIC_SPI 153 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&bpmp TEGRA186_CLK_NVDISPLAY_P0>;
+				clock-names = "dc";
+				resets = <&bpmp TEGRA186_RESET_NVDISPLAY0_HEAD0>;
+				reset-names = "dc";
+
+				power-domains = <&bpmp TEGRA186_POWER_DOMAIN_DISP>;
+				iommus = <&smmu TEGRA186_SID_NVDISPLAY>;
+
+				nvidia,outputs = <&dsia &dsib &sor0 &sor1>;
+				nvidia,head = <0>;
+			};
+
+			display@15210000 {
+				compatible = "nvidia,tegra186-dc";
+				reg = <0x15210000 0x10000>;
+				interrupts = <GIC_SPI 154 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&bpmp TEGRA186_CLK_NVDISPLAY_P1>;
+				clock-names = "dc";
+				resets = <&bpmp TEGRA186_RESET_NVDISPLAY0_HEAD1>;
+				reset-names = "dc";
+
+				power-domains = <&bpmp TEGRA186_POWER_DOMAIN_DISPB>;
+				iommus = <&smmu TEGRA186_SID_NVDISPLAY>;
+
+				nvidia,outputs = <&dsia &dsib &sor0 &sor1>;
+				nvidia,head = <1>;
+			};
+
+			display@15220000 {
+				compatible = "nvidia,tegra186-dc";
+				reg = <0x15220000 0x10000>;
+				interrupts = <GIC_SPI 155 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&bpmp TEGRA186_CLK_NVDISPLAY_P2>;
+				clock-names = "dc";
+				resets = <&bpmp TEGRA186_RESET_NVDISPLAY0_HEAD2>;
+				reset-names = "dc";
+
+				power-domains = <&bpmp TEGRA186_POWER_DOMAIN_DISPC>;
+				iommus = <&smmu TEGRA186_SID_NVDISPLAY>;
+
+				nvidia,outputs = <&sor0 &sor1>;
+				nvidia,head = <2>;
+			};
+		};
+
+		dsia: dsi@15300000 {
+			compatible = "nvidia,tegra186-dsi";
+			reg = <0x15300000 0x10000>;
+			interrupts = <GIC_SPI 20 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&bpmp TEGRA186_CLK_DSI>,
+				 <&bpmp TEGRA186_CLK_DSIA_LP>,
+				 <&bpmp TEGRA186_CLK_PLLD>;
+			clock-names = "dsi", "lp", "parent";
+			resets = <&bpmp TEGRA186_RESET_DSI>;
+			reset-names = "dsi";
+			status = "disabled";
+
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_DISP>;
+		};
 
 		vic@15340000 {
 			compatible = "nvidia,tegra186-vic";
@@ -464,6 +861,194 @@
 			reset-names = "vic";
 
 			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_VIC>;
+			iommus = <&smmu TEGRA186_SID_VIC>;
+
+			status = "disabled";
+		};
+
+		jpg@15380000 {
+			compatible = "nvidia,tegra186-jpg";
+			reg = <0x15380000 0x10000>;
+			interrupts = <GIC_SPI 198 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&bpmp TEGRA186_CLK_NVJPG>;
+			clock-names = "nvjpg";
+			resets = <&bpmp TEGRA186_RESET_NVJPG>;
+			reset-names = "nvjpg";
+			status = "disabled";
+
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_NVJPG>;
+		};
+
+		dsib: dsi@15400000 {
+			compatible = "nvidia,tegra186-dsi";
+			reg = <0x15400000 0x10000>;
+			interrupts = <GIC_SPI 21 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&bpmp TEGRA186_CLK_DSIB>,
+				 <&bpmp TEGRA186_CLK_DSIB_LP>,
+				 <&bpmp TEGRA186_CLK_PLLD>;
+			clock-names = "dsi", "lp", "parent";
+			resets = <&bpmp TEGRA186_RESET_DSIB>;
+			reset-names = "dsi";
+			status = "disabled";
+
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_DISP>;
+		};
+
+		decoder@15480000 {
+			compatible = "nvidia,tegra186-dec";
+			reg = <0x15480000 0x10000>;
+			interrupts = <GIC_SPI 199 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&bpmp TEGRA186_CLK_NVDEC>;
+			clock-names = "nvdec";
+			resets = <&bpmp TEGRA186_RESET_NVDEC>;
+			reset-names = "nvdec";
+			status = "disabled";
+
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_NVDEC>;
+		};
+
+		encoder@154c0000 {
+			compatible = "nvidia,tegra186-enc";
+			reg = <0x154c0000 0x10000>;
+			interrupts = <GIC_SPI 200 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&bpmp TEGRA186_CLK_NVENC>;
+			clock-names = "nvenc";
+			resets = <&bpmp TEGRA186_RESET_NVENC>;
+			reset-names = "nvenc";
+			status = "disabled";
+
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_MPE>;
+		};
+
+		tsec@15500000 {
+			compatible = "nvidia,tegra186-tsec";
+			reg = <0x15500000 0x10000>;
+			interrupts = <GIC_SPI 228 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&bpmp TEGRA186_CLK_TSEC>;
+			clock-names = "tsec";
+			resets = <&bpmp TEGRA186_RESET_TSEC>;
+			reset-names = "tsec";
+			status = "disabled";
+		};
+
+		sor0: sor@15540000 {
+			compatible = "nvidia,tegra186-sor";
+			reg = <0x15540000 0x10000>;
+			interrupts = <GIC_SPI 157 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&bpmp TEGRA186_CLK_SOR0>,
+				 <&bpmp TEGRA186_CLK_SOR0_OUT>,
+				 <&bpmp TEGRA186_CLK_PLLD2>,
+				 <&bpmp TEGRA186_CLK_PLLDP>,
+				 <&bpmp TEGRA186_CLK_SOR_SAFE>,
+				 <&bpmp TEGRA186_CLK_SOR0_PAD_CLKOUT>;
+			clock-names = "sor", "out", "parent", "dp", "safe",
+				      "pad";
+			resets = <&bpmp TEGRA186_RESET_SOR0>;
+			reset-names = "sor";
+			pinctrl-0 = <&state_dpaux_aux>;
+			pinctrl-1 = <&state_dpaux_i2c>;
+			pinctrl-2 = <&state_dpaux_off>;
+			pinctrl-names = "aux", "i2c", "off";
+			status = "disabled";
+
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_DISP>;
+			nvidia,interface = <0>;
+		};
+
+		sor1: sor@15580000 {
+			compatible = "nvidia,tegra186-sor";
+			reg = <0x15580000 0x10000>;
+			interrupts = <GIC_SPI 158 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&bpmp TEGRA186_CLK_SOR1>,
+				 <&bpmp TEGRA186_CLK_SOR1_OUT>,
+				 <&bpmp TEGRA186_CLK_PLLD3>,
+				 <&bpmp TEGRA186_CLK_PLLDP>,
+				 <&bpmp TEGRA186_CLK_SOR_SAFE>,
+				 <&bpmp TEGRA186_CLK_SOR1_PAD_CLKOUT>;
+			clock-names = "sor", "out", "parent", "dp", "safe",
+				      "pad";
+			resets = <&bpmp TEGRA186_RESET_SOR1>;
+			reset-names = "sor";
+			pinctrl-0 = <&state_dpaux1_aux>;
+			pinctrl-1 = <&state_dpaux1_i2c>;
+			pinctrl-2 = <&state_dpaux1_off>;
+			pinctrl-names = "aux", "i2c", "off";
+			status = "disabled";
+
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_DISP>;
+			nvidia,interface = <1>;
+		};
+
+		dpaux: dpaux@155c0000 {
+			compatible = "nvidia,tegra186-dpaux";
+			reg = <0x155c0000 0x10000>;
+			interrupts = <GIC_SPI 159 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&bpmp TEGRA186_CLK_DPAUX>,
+				 <&bpmp TEGRA186_CLK_PLLDP>;
+			clock-names = "dpaux", "parent";
+			resets = <&bpmp TEGRA186_RESET_DPAUX>;
+			reset-names = "dpaux";
+			status = "disabled";
+
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_DISP>;
+
+			state_dpaux_aux: pinmux-aux {
+				groups = "dpaux-io";
+				function = "aux";
+			};
+
+			state_dpaux_i2c: pinmux-i2c {
+				groups = "dpaux-io";
+				function = "i2c";
+			};
+
+			state_dpaux_off: pinmux-off {
+				groups = "dpaux-io";
+				function = "off";
+			};
+
+			i2c-bus {
+				#address-cells = <1>;
+				#size-cells = <0>;
+			};
+		};
+
+		padctl@15880000 {
+			compatible = "nvidia,tegra186-dsi-padctl";
+			reg = <0x15880000 0x10000>;
+			resets = <&bpmp TEGRA186_RESET_DSI>;
+			reset-names = "dsi";
+			status = "disabled";
+		};
+
+		dsic: dsi@15900000 {
+			compatible = "nvidia,tegra186-dsi";
+			reg = <0x15900000 0x10000>;
+			interrupts = <GIC_SPI 22 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&bpmp TEGRA186_CLK_DSIC>,
+				 <&bpmp TEGRA186_CLK_DSIC_LP>,
+				 <&bpmp TEGRA186_CLK_PLLD>;
+			clock-names = "dsi", "lp", "parent";
+			resets = <&bpmp TEGRA186_RESET_DSIC>;
+			reset-names = "dsi";
+			status = "disabled";
+
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_DISP>;
+		};
+
+		dsid: dsi@15940000 {
+			compatible = "nvidia,tegra186-dsi";
+			reg = <0x15940000 0x10000>;
+			interrupts = <GIC_SPI 23 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&bpmp TEGRA186_CLK_DSID>,
+				 <&bpmp TEGRA186_CLK_DSID_LP>,
+				 <&bpmp TEGRA186_CLK_PLLD>;
+			clock-names = "dsi", "lp", "parent";
+			resets = <&bpmp TEGRA186_RESET_DSID>;
+			reset-names = "dsi";
+			status = "disabled";
+
+			power-domains = <&bpmp TEGRA186_POWER_DOMAIN_DISP>;
 		};
 	};
 
@@ -483,6 +1068,9 @@
 		status = "disabled";
 
 		power-domains = <&bpmp TEGRA186_POWER_DOMAIN_GPU>;
+		/*
+		iommus = <&smmu TEGRA186_SID_GPU>;
+		*/
 	};
 
 	sysram@30000000 {

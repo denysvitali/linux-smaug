@@ -268,11 +268,11 @@
 			reg = <0x0 0x54580000 0x0 0x00040000>;
 			interrupts = <GIC_SPI 75 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&tegra_car TEGRA210_CLK_SOR1>,
-				 <&tegra_car TEGRA210_CLK_SOR1_SRC>,
+				 <&tegra_car TEGRA210_CLK_SOR1_OUT>,
 				 <&tegra_car TEGRA210_CLK_PLL_D2_OUT0>,
 				 <&tegra_car TEGRA210_CLK_PLL_DP>,
 				 <&tegra_car TEGRA210_CLK_SOR_SAFE>;
-			clock-names = "sor", "source", "parent", "dp", "safe";
+			clock-names = "sor", "out", "parent", "dp", "safe";
 			resets = <&tegra_car 183>;
 			reset-names = "sor";
 			pinctrl-0 = <&state_dpaux1_aux>;
@@ -354,7 +354,7 @@
 	gpu@57000000 {
 		compatible = "nvidia,gm20b";
 		reg = <0x0 0x57000000 0x0 0x01000000>,
-		      <0x0 0x58000000 0x0 0x01000000>;
+		      <0x0 0x58000000 0x0 0x08000000>;
 		interrupts = <GIC_SPI 157 IRQ_TYPE_LEVEL_HIGH>,
 			     <GIC_SPI 158 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "stall", "nonstall";
@@ -741,11 +741,9 @@
 					 <&tegra_car TEGRA210_CLK_DPAUX>,
 					 <&tegra_car TEGRA210_CLK_DPAUX1>,
 					 <&tegra_car TEGRA210_CLK_MIPI_CAL>;
-				resets = <&tegra_car TEGRA210_CLK_SOR0>,
-					 <&tegra_car TEGRA210_CLK_SOR1>,
-					 <&tegra_car TEGRA210_CLK_CSI>,
-				/*	 <&tegra_car TEGRA210_CLK_DSIA>,
-					 <&tegra_car TEGRA210_CLK_DSIB>,*/
+				resets = <&tegra_car TEGRA210_CLK_CSI>,
+					 <&tegra_car TEGRA210_CLK_DSIA>,
+					 <&tegra_car TEGRA210_CLK_DSIB>,
 					 <&tegra_car TEGRA210_CLK_DPAUX>,
 					 <&tegra_car TEGRA210_CLK_DPAUX1>,
 					 <&tegra_car TEGRA210_CLK_MIPI_CAL>;
@@ -787,6 +785,15 @@
 		clock-names = "fuse";
 		resets = <&tegra_car 39>;
 		reset-names = "fuse";
+	};
+
+	kfuse: kfuse@7000fc00 {
+		compatible = "nvidia,tegra210-kfuse";
+		reg = <0x0 0x7000fc00 0x0 0x400>;
+		clocks = <&tegra_car TEGRA210_CLK_KFUSE>;
+		clock-names = "kfuse";
+		resets = <&tegra_car 40>;
+		reset-names = "kfuse";
 	};
 
 	mc: memory-controller@70019000 {

@@ -1180,13 +1180,11 @@ static int dn_accept(struct socket *sock, struct socket *newsock, int flags,
 }
 
 
-static int dn_getname(struct socket *sock, struct sockaddr *uaddr,int *uaddr_len,int peer)
+static int dn_getname(struct socket *sock, struct sockaddr *uaddr,int peer)
 {
 	struct sockaddr_dn *sa = (struct sockaddr_dn *)uaddr;
 	struct sock *sk = sock->sk;
 	struct dn_scp *scp = DN_SK(sk);
-
-	*uaddr_len = sizeof(struct sockaddr_dn);
 
 	lock_sock(sk);
 
@@ -1205,18 +1203,18 @@ static int dn_getname(struct socket *sock, struct sockaddr *uaddr,int *uaddr_len
 
 	release_sock(sk);
 
-	return 0;
+	return sizeof(struct sockaddr_dn);
 }
 
 
-static unsigned int dn_poll(struct file *file, struct socket *sock, poll_table  *wait)
+static __poll_t dn_poll(struct file *file, struct socket *sock, poll_table  *wait)
 {
 	struct sock *sk = sock->sk;
 	struct dn_scp *scp = DN_SK(sk);
-	int mask = datagram_poll(file, sock, wait);
+	__poll_t mask = datagram_poll(file, sock, wait);
 
 	if (!skb_queue_empty(&scp->other_receive_queue))
-		mask |= POLLRDBAND;
+		mask |= EPOLLRDBAND;
 
 	return mask;
 }
@@ -2320,7 +2318,6 @@ static int dn_socket_seq_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations dn_socket_seq_fops = {
-	.owner		= THIS_MODULE,
 	.open		= dn_socket_seq_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,

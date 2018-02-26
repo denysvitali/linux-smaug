@@ -24,6 +24,7 @@
 
 	gpu@57000000 {
 		vdd-supply = <&vdd_gpu>;
+		status = "okay";
 	};
 
 	/* debug port */
@@ -39,6 +40,8 @@
 			compatible = "maxim,max77620";
 			reg = <0x3c>;
 			interrupts = <GIC_SPI 86 IRQ_TYPE_LEVEL_HIGH>;
+
+			system-power-controller;
 
 			#interrupt-cells = <2>;
 			interrupt-controller;
@@ -295,6 +298,29 @@
 			#clock-cells = <0>;
 			clock-frequency = <32768>;
 		};
+	};
+
+	cpus {
+		cpu@0 {
+			enable-method = "psci";
+		};
+
+		cpu@1 {
+			enable-method = "psci";
+		};
+
+		cpu@2 {
+			enable-method = "psci";
+		};
+
+		cpu@3 {
+			enable-method = "psci";
+		};
+	};
+
+	psci {
+		compatible = "arm,psci-0.2";
+		method = "smc";
 	};
 
 	regulators {

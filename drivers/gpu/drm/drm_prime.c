@@ -180,9 +180,8 @@ static int drm_prime_lookup_buf_handle(struct drm_prime_file_private *prime_fpri
 	return -ENOENT;
 }
 
-static int drm_gem_map_attach(struct dma_buf *dma_buf,
-			      struct device *target_dev,
-			      struct dma_buf_attachment *attach)
+int drm_gem_map_attach(struct dma_buf *dma_buf, struct device *target_dev,
+		       struct dma_buf_attachment *attach)
 {
 	struct drm_prime_attachment *prime_attach;
 	struct drm_gem_object *obj = dma_buf->priv;
@@ -200,9 +199,10 @@ static int drm_gem_map_attach(struct dma_buf *dma_buf,
 
 	return dev->driver->gem_prime_pin(obj);
 }
+EXPORT_SYMBOL(drm_gem_map_attach);
 
-static void drm_gem_map_detach(struct dma_buf *dma_buf,
-			       struct dma_buf_attachment *attach)
+void drm_gem_map_detach(struct dma_buf *dma_buf,
+			struct dma_buf_attachment *attach)
 {
 	struct drm_prime_attachment *prime_attach = attach->priv;
 	struct drm_gem_object *obj = dma_buf->priv;
@@ -218,8 +218,9 @@ static void drm_gem_map_detach(struct dma_buf *dma_buf,
 	sgt = prime_attach->sgt;
 	if (sgt) {
 		if (prime_attach->dir != DMA_NONE)
-			dma_unmap_sg(attach->dev, sgt->sgl, sgt->nents,
-					prime_attach->dir);
+			dma_unmap_sg_attrs(attach->dev, sgt->sgl, sgt->nents,
+					   prime_attach->dir,
+					   DMA_ATTR_SKIP_CPU_SYNC);
 		sg_free_table(sgt);
 	}
 
@@ -227,6 +228,7 @@ static void drm_gem_map_detach(struct dma_buf *dma_buf,
 	kfree(prime_attach);
 	attach->priv = NULL;
 }
+EXPORT_SYMBOL(drm_gem_map_detach);
 
 void drm_prime_remove_buf_handle_locked(struct drm_prime_file_private *prime_fpriv,
 					struct dma_buf *dma_buf)
@@ -253,8 +255,8 @@ void drm_prime_remove_buf_handle_locked(struct drm_prime_file_private *prime_fpr
 	}
 }
 
-static struct sg_table *drm_gem_map_dma_buf(struct dma_buf_attachment *attach,
-					    enum dma_data_direction dir)
+struct sg_table *drm_gem_map_dma_buf(struct dma_buf_attachment *attach,
+				     enum dma_data_direction dir)
 {
 	struct drm_prime_attachment *prime_attach = attach->priv;
 	struct drm_gem_object *obj = attach->dmabuf->priv;
@@ -277,7 +279,8 @@ static struct sg_table *drm_gem_map_dma_buf(struct dma_buf_attachment *attach,
 	sgt = obj->dev->driver->gem_prime_get_sg_table(obj);
 
 	if (!IS_ERR(sgt)) {
-		if (!dma_map_sg(attach->dev, sgt->sgl, sgt->nents, dir)) {
+		if (!dma_map_sg_attrs(attach->dev, sgt->sgl, sgt->nents, dir,
+				      DMA_ATTR_SKIP_CPU_SYNC)) {
 			sg_free_table(sgt);
 			kfree(sgt);
 			sgt = ERR_PTR(-ENOMEM);
@@ -289,13 +292,15 @@ static struct sg_table *drm_gem_map_dma_buf(struct dma_buf_attachment *attach,
 
 	return sgt;
 }
+EXPORT_SYMBOL(drm_gem_map_dma_buf);
 
-static void drm_gem_unmap_dma_buf(struct dma_buf_attachment *attach,
-				  struct sg_table *sgt,
-				  enum dma_data_direction dir)
+void drm_gem_unmap_dma_buf(struct dma_buf_attachment *attach,
+			   struct sg_table *sgt,
+			   enum dma_data_direction dir)
 {
 	/* nothing to be done here */
 }
+EXPORT_SYMBOL(drm_gem_unmap_dma_buf);
 
 /**
  * drm_gem_dmabuf_export - dma_buf export implementation for GEM

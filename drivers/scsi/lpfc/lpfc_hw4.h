@@ -1,7 +1,7 @@
 /*******************************************************************
  * This file is part of the Emulex Linux Device Driver for         *
  * Fibre Channel Host Bus Adapters.                                *
- * Copyright (C) 2017 Broadcom. All Rights Reserved. The term      *
+ * Copyright (C) 2017-2018 Broadcom. All Rights Reserved. The term *
  * “Broadcom” refers to Broadcom Limited and/or its subsidiaries.  *
  * Copyright (C) 2009-2016 Emulex.  All rights reserved.           *
  * EMULEX and SLI are trademarks of Emulex.                        *
@@ -1122,6 +1122,7 @@ struct cq_context {
 #define LPFC_CQ_CNT_256		0x0
 #define LPFC_CQ_CNT_512		0x1
 #define LPFC_CQ_CNT_1024	0x2
+#define LPFC_CQ_CNT_WORD7	0x3
 	uint32_t word1;
 #define lpfc_cq_eq_id_SHIFT		22	/* Version 0 Only */
 #define lpfc_cq_eq_id_MASK		0x000000FF
@@ -1129,7 +1130,7 @@ struct cq_context {
 #define lpfc_cq_eq_id_2_SHIFT		0 	/* Version 2 Only */
 #define lpfc_cq_eq_id_2_MASK		0x0000FFFF
 #define lpfc_cq_eq_id_2_WORD		word1
-	uint32_t reserved0;
+	uint32_t lpfc_cq_context_count;		/* Version 2 Only */
 	uint32_t reserved1;
 };
 
@@ -1193,6 +1194,9 @@ struct lpfc_mbx_cq_create_set {
 #define lpfc_mbx_cq_create_set_arm_SHIFT	31
 #define lpfc_mbx_cq_create_set_arm_MASK		0x00000001
 #define lpfc_mbx_cq_create_set_arm_WORD		word2
+#define lpfc_mbx_cq_create_set_cq_cnt_SHIFT	16
+#define lpfc_mbx_cq_create_set_cq_cnt_MASK	0x00007FFF
+#define lpfc_mbx_cq_create_set_cq_cnt_WORD	word2
 #define lpfc_mbx_cq_create_set_num_cq_SHIFT	0
 #define lpfc_mbx_cq_create_set_num_cq_MASK	0x0000FFFF
 #define lpfc_mbx_cq_create_set_num_cq_WORD	word2
@@ -3208,6 +3212,9 @@ struct lpfc_sli4_parameters {
 #define cfg_cqv_SHIFT				14
 #define cfg_cqv_MASK				0x00000003
 #define cfg_cqv_WORD				word4
+#define cfg_cqpsize_SHIFT			16
+#define cfg_cqpsize_MASK			0x000000ff
+#define cfg_cqpsize_WORD			word4
 	uint32_t word5;
 	uint32_t word6;
 #define cfg_mqv_SHIFT				14
@@ -3286,6 +3293,9 @@ struct lpfc_sli4_parameters {
 #define cfg_eqdr_SHIFT				8
 #define cfg_eqdr_MASK				0x00000001
 #define cfg_eqdr_WORD				word19
+#define cfg_nosr_SHIFT				9
+#define cfg_nosr_MASK				0x00000001
+#define cfg_nosr_WORD				word19
 #define LPFC_NODELAY_MAX_IO		32
 };
 
@@ -4339,9 +4349,9 @@ struct lpfc_nvme_prli {
 #define prli_init_SHIFT                 5
 #define prli_init_MASK                  0x00000001
 #define prli_init_WORD                  word4
-#define prli_recov_SHIFT                8
-#define prli_recov_MASK                 0x00000001
-#define prli_recov_WORD                 word4
+#define prli_conf_SHIFT                 7
+#define prli_conf_MASK                  0x00000001
+#define prli_conf_WORD                  word4
 	uint32_t word5;
 #define prli_fb_sz_SHIFT                0
 #define prli_fb_sz_MASK                 0x0000ffff

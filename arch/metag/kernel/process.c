@@ -27,6 +27,7 @@
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
 #include <linux/smp.h>
+#include <linux/system-power.h>
 #include <asm/core_reg.h>
 #include <asm/user_gateway.h>
 #include <asm/tcm.h>
@@ -94,8 +95,7 @@ void machine_halt(void)
 
 void machine_power_off(void)
 {
-	if (pm_power_off)
-		pm_power_off();
+	system_power_off();
 	smp_send_stop();
 	hard_processor_halt(HALT_OK);
 }
@@ -399,7 +399,7 @@ unsigned long __metag_elf_map(struct file *filep, unsigned long addr,
 	tcm_tag = tcm_lookup_tag(addr);
 
 	if (tcm_tag != TCM_INVALID_TAG)
-		type &= ~MAP_FIXED;
+		type &= ~(MAP_FIXED | MAP_FIXED_NOREPLACE);
 
 	/*
 	* total_size is the size of the ELF (interpreter) image.
@@ -416,6 +416,10 @@ unsigned long __metag_elf_map(struct file *filep, unsigned long addr,
 			vm_munmap(map_addr+size, total_size-size);
 	} else
 		map_addr = vm_mmap(filep, addr, size, prot, type, off);
+
+	if ((type & MAP_FIXED_NOREPLACE) && BAD_ADDR(map_addr))
+		pr_info("%d (%s): Uhuuh, elf segment at %p requested but the memory is mapped already\n",
+				task_pid_nr(current), current->comm, (void *)addr);
 
 	if (!BAD_ADDR(map_addr) && tcm_tag != TCM_INVALID_TAG) {
 		struct tcm_allocation *tcm;
