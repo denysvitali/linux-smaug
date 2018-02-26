@@ -354,7 +354,7 @@
 	gpu@57000000 {
 		compatible = "nvidia,gm20b";
 		reg = <0x0 0x57000000 0x0 0x01000000>,
-		      <0x0 0x58000000 0x0 0x08000000>;
+		      <0x0 0x58000000 0x0 0x01000000>;
 		interrupts = <GIC_SPI 157 IRQ_TYPE_LEVEL_HIGH>,
 			     <GIC_SPI 158 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "stall", "nonstall";
@@ -741,7 +741,9 @@
 					 <&tegra_car TEGRA210_CLK_DPAUX>,
 					 <&tegra_car TEGRA210_CLK_DPAUX1>,
 					 <&tegra_car TEGRA210_CLK_MIPI_CAL>;
-				resets = <&tegra_car TEGRA210_CLK_CSI>,
+				resets = <&tegra_car TEGRA210_CLK_SOR0>,
+					 <&tegra_car TEGRA210_CLK_SOR1>,
+					 <&tegra_car TEGRA210_CLK_CSI>,
 				/*	 <&tegra_car TEGRA210_CLK_DSIA>,
 					 <&tegra_car TEGRA210_CLK_DSIB>,*/
 					 <&tegra_car TEGRA210_CLK_DPAUX>,
@@ -785,15 +787,6 @@
 		clock-names = "fuse";
 		resets = <&tegra_car 39>;
 		reset-names = "fuse";
-	};
-
-	kfuse: kfuse@7000fc00 {
-		compatible = "nvidia,tegra210-kfuse";
-		reg = <0x0 0x7000fc00 0x0 0x400>;
-		clocks = <&tegra_car TEGRA210_CLK_KFUSE>;
-		clock-names = "kfuse";
-		resets = <&tegra_car 40>;
-		reset-names = "kfuse";
 	};
 
 	mc: memory-controller@70019000 {
@@ -1013,6 +1006,17 @@
 		};
 	};
 
+	sdhci@700b0600 {
+		compatible = "nvidia,tegra210-sdhci", "nvidia,tegra124-sdhci";
+		reg = <0x0 0x700b0600 0x0 0x200>;
+		interrupts = <GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&tegra_car TEGRA210_CLK_SDMMC4>;
+		clock-names = "sdhci";
+		resets = <&tegra_car 15>;
+		reset-names = "sdhci";
+		status = "disabled";
+	};
+
 	sdhci@700b0000 {
 		compatible = "nvidia,tegra210-sdhci", "nvidia,tegra124-sdhci";
 		reg = <0x0 0x700b0000 0x0 0x200>;
@@ -1042,17 +1046,6 @@
 		clocks = <&tegra_car TEGRA210_CLK_SDMMC3>;
 		clock-names = "sdhci";
 		resets = <&tegra_car 69>;
-		reset-names = "sdhci";
-		status = "disabled";
-	};
-
-	sdhci@700b0600 {
-		compatible = "nvidia,tegra210-sdhci", "nvidia,tegra124-sdhci";
-		reg = <0x0 0x700b0600 0x0 0x200>;
-		interrupts = <GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;
-		clocks = <&tegra_car TEGRA210_CLK_SDMMC4>;
-		clock-names = "sdhci";
-		resets = <&tegra_car 15>;
 		reset-names = "sdhci";
 		status = "disabled";
 	};
