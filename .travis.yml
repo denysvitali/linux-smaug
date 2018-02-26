@@ -4,7 +4,7 @@ services:
 before_install:
   - docker ps -a
 script:
-  - docker run --privileged -v kernel:/kernel --entrypoint=zsh dvitali/android-build:feb-5-2 -c 'cd /kernel/; git clone https://github.com/denysvitali/linux-smaug; cd /kernel/linux-smaug/; ./docker-init.sh; ./getvendor.sh && make -j8 && ./build-image.sh'
+  - docker run --privileged -v kernel:/kernel --entrypoint=zsh dvitali/android-build:feb-5-2 -c 'cd /kernel/; git clone -b for-4.17/work https://github.com/denysvitali/linux-smaug; cd /kernel/linux-smaug/; ./docker-init.sh; ./getvendor.sh && make -j8 && ./build-image.sh'
 deploy:
   provider: releases
   api_key:
