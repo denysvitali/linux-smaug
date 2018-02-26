@@ -1,32 +1,29 @@
-// SPDX-License-Identifier: GPL-2.0
 /dts-v1/;
 
-#include <dt-bindings/input/linux-event-codes.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/mfd/max77620.h>
 #include <dt-bindings/gpio/tegra-gpio.h>
 #include <dt-bindings/pinctrl/pinctrl-tegra.h>
+#include <dt-bindings/soc/tegra-pmc.h>
 
 #include "tegra210.dtsi"
 
 / {
 	model = "Google Pixel C";
 	compatible = "google,smaug-rev8", "google,smaug-rev7",
-		     "google,smaug-rev6", "google,smaug-rev5",
-		     "google,smaug-rev4", "google,smaug-rev3",
-		     "google,smaug-rev2", "google,smaug-rev1",
-		     "google,smaug", "nvidia,tegra210";
+				 "google,smaug-rev6", "google,smaug-rev5",
+				 "google,smaug-rev4", "google,smaug-rev3",
+				 "google,smaug-rev2", "google,smaug-rev1",
+				 "google,smaug", "nvidia,tegra210";
 
 	aliases {
-		rtc0 = "/i2c@7000d000/pmic@3c";
-		rtc1 = "/rtc@7000e000";
 		serial0 = &uarta;
 		serial1 = &uartc;
 		serial2 = &uartd;
 	};
 
 	chosen {
-		bootargs = "cros_legacy init=/init rw fbcon loglevel=0 debug earlyprintk drm.atomic=1 no_console_suspend firmware_class.path=/lib/firmware";
+		bootargs = "fbcon video=tegrafb debug earlyprintk earlycon=uart8250,mmio32,0x70006000 drm.atomic=1 consoleblank=0 firmware_class.path=/lib/firmware";
 	};
 
 	memory {
@@ -42,6 +39,7 @@
 			avdd-dsi-csi-supply = <&pp1200_avdd>;
 			#address-cells = <2>;
 			#size-cells = <2>;
+
 			secondary: panel@0 {
 				compatible = "jdi,lpm102a188a";
 				reg = <0x0 0 0x0 0>;
@@ -49,7 +47,7 @@
 		};
 
 		dc@54240000 {
-			status = "okay";
+			status = "disabled";
 		};
 
 		dsib: dsi@54400000 {
@@ -58,6 +56,7 @@
 			nvidia,ganged-mode = <&dsia>;
 			#address-cells = <2>;
 			#size-cells = <2>;
+
 			lcdc0: panel@0 {
 				compatible = "jdi,lpm102a188a";
 				reg = <0x0 0 0x0 0>;
@@ -69,24 +68,34 @@
 				backlight = <&backlight>;
 			};
 		};
+
+
 		sor@54540000 {
 			status = "disabled";
 		};
+
 		sor@54580000 {
 			status = "disabled";
 		};
+
 		dpaux@54040000 {
 			status = "disabled";
+
 			vdd-supply = <&pp3300>;
 		};
+
 		dpaux@545c0000 {
 			status = "okay";
+
 			vdd-supply = <&pp3300>;
 		};
+
 		i2c@546c0000 {
 			status = "disabled";
 		};
+
 	};
+
 	gpu@57000000 {
 		status = "okay";
 		vdd-supply = <&max77621_gpu>;
@@ -95,14 +104,18 @@
 	serial@70006000 {
 		status = "okay";
 	};
+
+
 	serial@70006200 {
 		compatible = "nvidia,tegra210-hsuart", "nvidia,tegra30-hsuart";
 		status = "okay";
 	};
+
 	serial@70006300 {
 		compatible = "nvidia,tegra124-hsuart", "nvidia,tegra30-hsuart";
 		status = "okay";
 	};
+
 	pinmux: pinmux@700008d4 {
 		pinctrl-names = "bootloader";
 		pinctrl-0 = <&pinmux_boot>;
@@ -1425,12 +1438,14 @@
 	i2c@7000c500 {
 		status = "okay";
 		clock-frequency = <400000>;
+
 		tpm@20 {
 			compatible = "infineon,slb9645tt";
 			reg = <0x20>;
 			powered-while-suspended;
 			status = "okay";
 		};
+
 	};
 
 	i2c@7000d000 {
@@ -1451,9 +1466,15 @@
 			pinctrl-names = "default";
 			pinctrl-0 = <&max77620_default>;
 
+			in-ldo0-1-supply = <&pp1350>;
+			in-ldo2-supply = <&pp3300>;
+			in-ldo3-5-supply = <&pp3300>;
+			in-ldo7-8-supply = <&pp1350>;
+
 			max77620_default: pinmux@0 {
 				pin_gpio {
-					pins = "gpio0", "gpio1", "gpio2", "gpio7";
+					pins = "gpio0", "gpio1", "gpio2", "gpio5",
+					       "gpio6", "gpio7";
 					function = "gpio";
 				};
 
@@ -1471,7 +1492,7 @@
 					maxim,active-fps-power-down-slot = <2>;
 				};
 
-				pin_gpio5_6 {
+				pin_gpio5_6_7 {
 					pins = "gpio5", "gpio6";
 					function = "gpio";
 					drive-push-pull = <1>;
@@ -1501,10 +1522,6 @@
 			};
 
 			regulators {
-				in-ldo0-1-supply = <&pp1350>;
-				in-ldo2-supply = <&pp3300>;
-				in-ldo3-5-supply = <&pp3300>;
-				in-ldo7-8-supply = <&pp1350>;
 
 				ppvar_soc: sd0 {
 					regulator-name = "PPVAR_SOC";
@@ -1720,6 +1737,7 @@
 			status = "disabled";
 		};
 
+
 		backlight: lp8557-backlight@2c {
 				status = "okay";
 				compatible = "ti,lp8557";
@@ -1754,22 +1772,18 @@
 		audio-codec@2d {
 			compatible = "realtek,rt5677";
 			reg = <0x2d>;
-			interrupt-parent = <&gpio>;
-			interrupts = <TEGRA_GPIO(X, 0) IRQ_TYPE_LEVEL_HIGH>;
-			realtek,reset-gpio = <&gpio TEGRA_GPIO(BB, 3) GPIO_ACTIVE_LOW>;
+			interrupts-extended = <&gpio TEGRA_GPIO(X, 3) IRQ_TYPE_EDGE_BOTH>;
 			gpio-controller;
 			#gpio-cells = <2>;
 			// TODO: Add more?
 			// See: Documentation/devicetree/bindings/sound/rt5677.txt
 			status = "disabled";
 		};
-
 		audio-jack@3b {
 			// TODO: Describe TI TS3A227E
 			reg = <0x3b>;
 			status = "disabled";
 		};
-
 		tmp451: temperature-sensor@4c {
 			status = "okay";
 			compatible = "ti,tmp451";
@@ -1795,7 +1809,7 @@
 
 	usb@70090000 {
 		phys = <&{/padctl@7009f000/pads/usb2/lanes/usb2-0}>,
-		       <&{/padctl@7009f000/pads/pcie/lanes/pcie-6}>;
+			<&{/padctl@7009f000/pads/pcie/lanes/pcie-6}>;
 		phy-names = "usb2-0", "usb3-0";
 
 		dvddio-pex-supply = <&avddio_1v05>;
@@ -1857,7 +1871,7 @@
 		bus-width = <4>;
 		keep-power-in-suspend;
 		non-removable;
-		status = "disabled";
+		status = "okay";
 	};
 
 	sdhci@700b0600 {
@@ -1869,14 +1883,6 @@
 
 	aconnect@702c0000 {
 		status = "okay";
-
-		dma@702e2000 {
-			status = "okay";
-		};
-
-		agic@702f9000 {
-			status = "okay";
-		};
 	};
 
 	clocks {
@@ -1911,9 +1917,27 @@
 		};
 	};
 
+	wifi: wifi_bcm4354 {
+		compatible = "brcm,bcm4354";
+		interrupt-parent = <&gpio>;
+		interrupts = <TEGRA_GPIO(H, 2) IRQ_TYPE_LEVEL_HIGH>;
+		wl_reg_on = <&gpio TEGRA_GPIO(H, 1) GPIO_ACTIVE_HIGH>;
+		wl_host_wake = <&gpio TEGRA_GPIO(H, 2) IRQ_TYPE_LEVEL_HIGH>;
+		nvidia,pmc-wakeup = <&pmc
+			PMC_WAKE_TYPE_EVENT 8 PMC_TRIGGER_TYPE_HIGH>;
+	};
+	bluetooth: bt_bcm4354 {
+		compatible = "brcm,bt-bcm4354";
+		bt_reg_on-gpios = <&gpio TEGRA_GPIO(H, 4) GPIO_ACTIVE_LOW>;
+		bt_host_wake-gpios = <&gpio TEGRA_GPIO(H, 5) GPIO_ACTIVE_HIGH>;
+		bt_ext_wake-gpios = <&gpio TEGRA_GPIO(H, 3) GPIO_ACTIVE_LOW>;
+		nvidia,pmc-wakeup = <&pmc
+				PMC_WAKE_TYPE_EVENT 52 PMC_TRIGGER_TYPE_HIGH>;
+	};
+
 	gpio-keys {
 		compatible = "gpio-keys";
-	/*	gpio-keys,name = "gpio-keys";*/
+		gpio-keys,name = "gpio-keys";
 		status = "okay";
 
 		power {
@@ -1951,21 +1975,22 @@
 			gpios = <&gpio TEGRA_GPIO(M, 4) GPIO_ACTIVE_LOW>;
 			linux,code = <KEY_VOLUMEUP>;
 		};
+
 	};
 
-	max98357a {
+	speaker: max98357a {
 		compatible = "maxim,max98357a";
 		status = "okay";
 	};
 
 	psci {
-		compatible = "arm,psci-0.2";
+		compatible = "arm,psci-1.0";
 		method = "smc";
 	};
 
 	regulators {
 		compatible = "simple-bus";
-	/*	device_type = "fixed-regulators";*/
+		device_type = "fixed-regulators";
 		#address-cells = <1>;
 		#size-cells = <0>;
 
@@ -1986,7 +2011,6 @@
 			regulator-max-microvolt = <4400000>;
 			gpio = <&gpio TEGRA_GPIO(V, 4) GPIO_ACTIVE_LOW>;
 			enable-active-high;
-			regulator-boot-on;
 		};
 
 		pp3000_always: regulator@2 {
@@ -2026,7 +2050,6 @@
 			regulator-max-microvolt = <1800000>;
 			gpio = <&gpio TEGRA_GPIO(V, 3) GPIO_ACTIVE_LOW>;
 			enable-active-high;
-			regulator-boot-on;
 		};
 
 		pp1800_cam: regulator@6 {
@@ -2045,6 +2068,40 @@
 			regulator-name = "USBC_VBUS";
 			regulator-min-microvolt = <5000000>;
 			regulator-max-microvolt = <5000000>;
+		};
+	};
+
+	spi@70410000 {
+		status = "disabled";
+		spi@0 {
+			compatible = "spidev";
+			reg = <1>;
+			spi-max-frequency = <24000000>;
+			controller-data {
+				nvidia,x1-len-limit = <16>;
+				nvidia,x1-bus-speed = <24000000>;
+				nvidia,x1-dummy-cycle = <0>;
+				nvidia,x4-bus-speed = <24000000>;
+				nvidia,x4-dummy-cycle = <8>;
+			};
+		};
+		spiflash@1 {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			compatible = "w25q128fw";
+			reg = <0>;
+			spi-max-frequency = <24000000>;
+			partition@0 {
+				label = "Bootloader";
+				reg = <0x00000000 0x01000000>;
+			};
+			controller-data {
+				nvidia,x1-len-limit = <16>;
+				nvidia,x1-bus-speed = <24000000>;
+				nvidia,x1-dummy-cycle = <0>;
+				nvidia,x4-bus-speed = <24000000>;
+				nvidia,x4-dummy-cycle = <8>;
+			};
 		};
 	};
 };
