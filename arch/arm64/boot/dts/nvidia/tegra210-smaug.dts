@@ -1926,7 +1926,7 @@
 		nvidia,pmc-wakeup = <&pmc
 			PMC_WAKE_TYPE_EVENT 8 PMC_TRIGGER_TYPE_HIGH>;
 	};
-	bt_bcm4354 {
+	bluetooth: bt_bcm4354 {
 		compatible = "brcm,bt-bcm4354";
 		bt_reg_on-gpios = <&gpio TEGRA_GPIO(H, 4) GPIO_ACTIVE_LOW>;
 		bt_host_wake-gpios = <&gpio TEGRA_GPIO(H, 5) GPIO_ACTIVE_HIGH>;
