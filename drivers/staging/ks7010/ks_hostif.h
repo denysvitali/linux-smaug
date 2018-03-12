@@ -13,6 +13,7 @@
 #define _KS_HOSTIF_H_
 
 #include <linux/compiler.h>
+#include <linux/ieee80211.h>
 
 /*
  * HOST-MAC I/F events
@@ -224,10 +225,9 @@ struct hostif_start_confirm_t {
 	__le16 result_code;
 } __packed;
 
-#define SSID_MAX_SIZE 32
 struct ssid_t {
 	u8 size;
-	u8 body[SSID_MAX_SIZE];
+	u8 body[IEEE80211_MAX_SSID_LEN];
 	u8 ssid_pad;
 } __packed;
 
@@ -284,20 +284,8 @@ struct ap_info_t {
 	u8 pad0;	/* +09 */
 	__le16 beacon_period;	/* +10 */
 	__le16 capability;	/* +12 */
-#define BSS_CAP_ESS             BIT(0)
-#define BSS_CAP_IBSS            BIT(1)
-#define BSS_CAP_CF_POLABLE      BIT(2)
-#define BSS_CAP_CF_POLL_REQ     BIT(3)
-#define BSS_CAP_PRIVACY         BIT(4)
-#define BSS_CAP_SHORT_PREAMBLE  BIT(5)
-#define BSS_CAP_PBCC            BIT(6)
-#define BSS_CAP_CHANNEL_AGILITY BIT(7)
-#define BSS_CAP_SHORT_SLOT_TIME BIT(10)
-#define BSS_CAP_DSSS_OFDM       BIT(13)
 	u8 frame_type;	/* +14 */
 	u8 ch_info;	/* +15 */
-#define FRAME_TYPE_BEACON	0x80
-#define FRAME_TYPE_PROBE_RESP	0x50
 	__le16 body_size;	/* +16 */
 	u8 body[1024];	/* +18 */
 	/* +1032 */
@@ -475,8 +463,6 @@ struct last_associate_t {
 
 struct association_request_t {
 	u8 type;
-#define FRAME_TYPE_ASSOC_REQ	0x00
-#define FRAME_TYPE_REASSOC_REQ	0x20
 	u8 pad;
 	__le16 capability;
 	__le16 listen_interval;
@@ -486,8 +472,6 @@ struct association_request_t {
 
 struct association_response_t {
 	u8 type;
-#define FRAME_TYPE_ASSOC_RESP	0x10
-#define FRAME_TYPE_REASSOC_RESP	0x30
 	u8 pad;
 	__le16 capability;
 	__le16 status;

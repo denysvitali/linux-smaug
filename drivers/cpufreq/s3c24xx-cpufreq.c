@@ -351,7 +351,13 @@ struct clk *s3c_cpufreq_clk_get(struct device *dev, const char *name)
 static int s3c_cpufreq_init(struct cpufreq_policy *policy)
 {
 	policy->clk = clk_arm;
-	return cpufreq_generic_init(policy, ftab, cpu_cur.info->latency);
+
+	policy->cpuinfo.transition_latency = cpu_cur.info->latency;
+
+	if (ftab)
+		return cpufreq_table_validate_and_show(policy, ftab);
+
+	return 0;
 }
 
 static int __init s3c_cpufreq_initclks(void)
@@ -473,10 +479,8 @@ int __init s3c_cpufreq_setboard(struct s3c_cpufreq_board *board)
 	 * initdata. */
 
 	ours = kzalloc(sizeof(*ours), GFP_KERNEL);
-	if (ours == NULL) {
-		pr_err("%s: no memory\n", __func__);
+	if (!ours)
 		return -ENOMEM;
-	}
 
 	*ours = *board;
 	cpu_cur.board = ours;
@@ -562,10 +566,8 @@ static int s3c_cpufreq_build_freq(void)
 	size++;
 
 	ftab = kzalloc(sizeof(*ftab) * size, GFP_KERNEL);
-	if (!ftab) {
-		pr_err("%s: no memory for tables\n", __func__);
+	if (!ftab)
 		return -ENOMEM;
-	}
 
 	ftab_size = size;
 

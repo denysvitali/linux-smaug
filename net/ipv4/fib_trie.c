@@ -50,6 +50,7 @@
 
 #define VERSION "0.409"
 
+#include <linux/cache.h>
 #include <linux/uaccess.h>
 #include <linux/bitops.h>
 #include <linux/types.h>
@@ -191,8 +192,8 @@ static size_t tnode_free_size;
  */
 static const int sync_pages = 128;
 
-static struct kmem_cache *fn_alias_kmem __read_mostly;
-static struct kmem_cache *trie_leaf_kmem __read_mostly;
+static struct kmem_cache *fn_alias_kmem __ro_after_init;
+static struct kmem_cache *trie_leaf_kmem __ro_after_init;
 
 static inline struct tnode *tn_info(struct key_vector *kv)
 {
@@ -2334,7 +2335,6 @@ static int fib_triestat_seq_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations fib_triestat_fops = {
-	.owner	= THIS_MODULE,
 	.open	= fib_triestat_seq_open,
 	.read	= seq_read,
 	.llseek	= seq_lseek,
@@ -2521,7 +2521,6 @@ static int fib_trie_seq_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations fib_trie_fops = {
-	.owner  = THIS_MODULE,
 	.open   = fib_trie_seq_open,
 	.read   = seq_read,
 	.llseek = seq_lseek,
@@ -2715,7 +2714,6 @@ static int fib_route_seq_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations fib_route_fops = {
-	.owner  = THIS_MODULE,
 	.open   = fib_route_seq_open,
 	.read   = seq_read,
 	.llseek = seq_lseek,

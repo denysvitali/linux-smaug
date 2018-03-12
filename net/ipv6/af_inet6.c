@@ -284,6 +284,7 @@ int inet6_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	struct net *net = sock_net(sk);
 	__be32 v4addr = 0;
 	unsigned short snum;
+	bool saved_ipv6only;
 	int addr_type = 0;
 	int err = 0;
 
@@ -389,19 +390,21 @@ int inet6_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	if (!(addr_type & IPV6_ADDR_MULTICAST))
 		np->saddr = addr->sin6_addr;
 
+	saved_ipv6only = sk->sk_ipv6only;
+	if (addr_type != IPV6_ADDR_ANY && addr_type != IPV6_ADDR_MAPPED)
+		sk->sk_ipv6only = 1;
+
 	/* Make sure we are allowed to bind here. */
 	if ((snum || !inet->bind_address_no_port) &&
 	    sk->sk_prot->get_port(sk, snum)) {
+		sk->sk_ipv6only = saved_ipv6only;
 		inet_reset_saddr(sk);
 		err = -EADDRINUSE;
 		goto out;
 	}
 
-	if (addr_type != IPV6_ADDR_ANY) {
+	if (addr_type != IPV6_ADDR_ANY)
 		sk->sk_userlocks |= SOCK_BINDADDR_LOCK;
-		if (addr_type != IPV6_ADDR_MAPPED)
-			sk->sk_ipv6only = 1;
-	}
 	if (snum)
 		sk->sk_userlocks |= SOCK_BINDPORT_LOCK;
 	inet->inet_sport = htons(inet->inet_num);
@@ -467,7 +470,7 @@ EXPORT_SYMBOL_GPL(inet6_destroy_sock);
  */
 
 int inet6_getname(struct socket *sock, struct sockaddr *uaddr,
-		 int *uaddr_len, int peer)
+		 int peer)
 {
 	struct sockaddr_in6 *sin = (struct sockaddr_in6 *)uaddr;
 	struct sock *sk = sock->sk;
@@ -497,8 +500,7 @@ int inet6_getname(struct socket *sock, struct sockaddr *uaddr,
 	}
 	sin->sin6_scope_id = ipv6_iface_scope_id(&sin->sin6_addr,
 						 sk->sk_bound_dev_if);
-	*uaddr_len = sizeof(*sin);
-	return 0;
+	return sizeof(*sin);
 }
 EXPORT_SYMBOL(inet6_getname);
 
@@ -855,6 +857,7 @@ static void __net_exit inet6_net_exit(struct net *net)
 static struct pernet_operations inet6_net_ops = {
 	.init = inet6_net_init,
 	.exit = inet6_net_exit,
+	.async = true,
 };
 
 static const struct ipv6_stub ipv6_stub_impl = {

@@ -155,8 +155,6 @@ void t4vf_os_link_changed(struct adapter *adapter, int pidx, int link_ok)
 		const char *fc;
 		const struct port_info *pi = netdev_priv(dev);
 
-		netif_carrier_on(dev);
-
 		switch (pi->link_cfg.speed) {
 		case 100:
 			s = "100Mbps";
@@ -202,7 +200,6 @@ void t4vf_os_link_changed(struct adapter *adapter, int pidx, int link_ok)
 
 		netdev_info(dev, "link up, %s, full-duplex, %s PAUSE\n", s, fc);
 	} else {
-		netif_carrier_off(dev);
 		netdev_info(dev, "link down\n");
 	}
 }
@@ -278,6 +275,17 @@ static int link_start(struct net_device *dev)
 	 */
 	if (ret == 0)
 		ret = t4vf_enable_vi(pi->adapter, pi->viid, true, true);
+
+	/* The Virtual Interfaces are connected to an internal switch on the
+	 * chip which allows VIs attached to the same port to talk to each
+	 * other even when the port link is down.  As a result, we generally
+	 * want to always report a VI's link as being "up", provided there are
+	 * no errors in enabling vi.
+	 */
+
+	if (ret == 0)
+		netif_carrier_on(dev);
+
 	return ret;
 }
 
@@ -791,6 +799,8 @@ static int cxgb4vf_open(struct net_device *dev)
 	if (err)
 		goto err_unwind;
 
+	pi->vlan_id = t4vf_get_vf_vlan_acl(adapter);
+
 	netif_tx_start_all_queues(dev);
 	set_bit(pi->port_id, &adapter->open_device_map);
 	return 0;
@@ -1229,7 +1239,8 @@ static int from_fw_port_mod_type(enum fw_port_type port_type,
 		else
 			return PORT_OTHER;
 	} else if (port_type == FW_PORT_TYPE_KR4_100G ||
-		   port_type == FW_PORT_TYPE_KR_SFP28) {
+		   port_type == FW_PORT_TYPE_KR_SFP28 ||
+		   port_type == FW_PORT_TYPE_KR_XLAUI) {
 		return PORT_NONE;
 	}
 
@@ -1321,6 +1332,13 @@ static void fw_caps_to_lmm(enum fw_port_type port_type,
 	case FW_PORT_TYPE_KR_SFP28:
 		SET_LMM(Backplane);
 		SET_LMM(25000baseKR_Full);
+		break;
+
+	case FW_PORT_TYPE_KR_XLAUI:
+		SET_LMM(Backplane);
+		FW_CAPS_TO_LMM(SPEED_1G, 1000baseKX_Full);
+		FW_CAPS_TO_LMM(SPEED_10G, 10000baseKR_Full);
+		FW_CAPS_TO_LMM(SPEED_40G, 40000baseKR4_Full);
 		break;
 
 	case FW_PORT_TYPE_CR2_QSFP:

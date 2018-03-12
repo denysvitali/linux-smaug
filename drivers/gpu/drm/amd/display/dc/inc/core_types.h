@@ -119,6 +119,11 @@ struct resource_funcs {
 			struct dc *dc,
 			struct dc_state *new_ctx,
 			struct dc_stream_state *dc_stream);
+
+	enum dc_status (*remove_stream_from_ctx)(
+				struct dc *dc,
+				struct dc_state *new_ctx,
+				struct dc_stream_state *stream);
 };
 
 struct audio_support{
@@ -139,6 +144,7 @@ struct resource_pool {
 	struct timing_generator *timing_generators[MAX_PIPES];
 	struct stream_encoder *stream_enc[MAX_PIPES * 2];
 
+	struct hubbub *hubbub;
 	struct mpc *mpc;
 	struct pp_smu_funcs_rv *pp_smu;
 	struct pp_smu_display_requirement_rv pp_smu_req;
@@ -147,6 +153,7 @@ struct resource_pool {
 	unsigned int underlay_pipe_index;
 	unsigned int stream_enc_count;
 	unsigned int ref_clock_inKhz;
+	unsigned int timing_generator_count;
 
 	/*
 	 * reserved clock source for DP
@@ -187,6 +194,7 @@ struct plane_resource {
 	struct input_pixel_processor *ipp;
 	struct transform *xfm;
 	struct dpp *dpp;
+	uint8_t mpcc_inst;
 };
 
 struct pipe_ctx {
@@ -211,7 +219,6 @@ struct pipe_ctx {
 	struct _vcs_dpi_display_rq_regs_st rq_regs;
 	struct _vcs_dpi_display_pipe_dest_params_st pipe_dlg_param;
 #endif
-	struct dwbc *dwbc;
 };
 
 struct resource_context {
@@ -240,6 +247,7 @@ struct dce_bw_output {
 
 struct dcn_bw_clocks {
 	int dispclk_khz;
+	int dppclk_khz;
 	bool dppclk_div;
 	int dcfclk_khz;
 	int dcfclk_deep_sleep_khz;

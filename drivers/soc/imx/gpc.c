@@ -18,6 +18,7 @@
 #include <linux/pm_domain.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
+#include <linux/slab.h>
 
 #define GPC_CNTR		0x000
 
@@ -254,6 +255,7 @@ static struct imx_pm_domain imx_gpc_domains[] = {
 	{
 		.base = {
 			.name = "ARM",
+			.flags = GENPD_FLAG_ALWAYS_ON,
 		},
 	}, {
 		.base = {
@@ -273,7 +275,15 @@ static struct imx_pm_domain imx_gpc_domains[] = {
 		},
 		.reg_offs = 0x240,
 		.cntr_pdn_bit = 4,
-	}
+	}, {
+		.base = {
+			.name = "PCI",
+			.power_off = imx6_pm_domain_power_off,
+			.power_on = imx6_pm_domain_power_on,
+		},
+		.reg_offs = 0x200,
+		.cntr_pdn_bit = 6,
+	},
 };
 
 struct imx_gpc_dt_data {
@@ -296,10 +306,16 @@ static const struct imx_gpc_dt_data imx6sl_dt_data = {
 	.err009619_present = false,
 };
 
+static const struct imx_gpc_dt_data imx6sx_dt_data = {
+	.num_domains = 4,
+	.err009619_present = false,
+};
+
 static const struct of_device_id imx_gpc_dt_ids[] = {
 	{ .compatible = "fsl,imx6q-gpc", .data = &imx6q_dt_data },
 	{ .compatible = "fsl,imx6qp-gpc", .data = &imx6qp_dt_data },
 	{ .compatible = "fsl,imx6sl-gpc", .data = &imx6sl_dt_data },
+	{ .compatible = "fsl,imx6sx-gpc", .data = &imx6sx_dt_data },
 	{ }
 };
 
@@ -334,7 +350,7 @@ static int imx_gpc_old_dt_init(struct device *dev, struct regmap *regmap,
 		if (i == 1) {
 			domain->supply = devm_regulator_get(dev, "pu");
 			if (IS_ERR(domain->supply))
-				return PTR_ERR(domain->supply);;
+				return PTR_ERR(domain->supply);
 
 			ret = imx_pgc_get_clocks(dev, domain);
 			if (ret)
@@ -428,13 +444,19 @@ static int imx_gpc_probe(struct platform_device *pdev)
 			if (domain_index >= of_id_data->num_domains)
 				continue;
 
-			domain = &imx_gpc_domains[domain_index];
+			domain = kmalloc(sizeof(*domain), GFP_KERNEL);
+			if (!domain) {
+				of_node_put(np);
+				return -ENOMEM;
+			}
+			memcpy(domain, &imx_gpc_domains[domain_index], sizeof(*domain));
 			domain->regmap = regmap;
 			domain->ipg_rate_mhz = ipg_rate_mhz;
 
 			pd_pdev = platform_device_alloc("imx-pgc-power-domain",
 							domain_index);
 			if (!pd_pdev) {
+				kfree(domain);
 				of_node_put(np);
 				return -ENOMEM;
 			}
@@ -456,13 +478,21 @@ static int imx_gpc_probe(struct platform_device *pdev)
 
 static int imx_gpc_remove(struct platform_device *pdev)
 {
+	struct device_node *pgc_node;
 	int ret;
+
+	pgc_node = of_get_child_by_name(pdev->dev.of_node, "pgc");
+
+	/* bail out if DT too old and doesn't provide the necessary info */
+	if (!of_property_read_bool(pdev->dev.of_node, "#power-domain-cells") &&
+	    !pgc_node)
+		return 0;
 
 	/*
 	 * If the old DT binding is used the toplevel driver needs to
 	 * de-register the power domains
 	 */
-	if (!of_get_child_by_name(pdev->dev.of_node, "pgc")) {
+	if (!pgc_node) {
 		of_genpd_del_provider(pdev->dev.of_node);
 
 		ret = pm_genpd_remove(&imx_gpc_domains[GPC_PGC_DOMAIN_PU].base);

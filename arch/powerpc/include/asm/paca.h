@@ -141,7 +141,7 @@ struct paca_struct {
 #ifdef CONFIG_PPC_BOOK3S
 	mm_context_id_t mm_ctx_id;
 #ifdef CONFIG_PPC_MM_SLICES
-	u64 mm_ctx_low_slices_psize;
+	unsigned char mm_ctx_low_slices_psize[BITS_PER_LONG / BITS_PER_BYTE];
 	unsigned char mm_ctx_high_slices_psize[SLICE_ARRAY_SIZE];
 	unsigned long mm_ctx_slb_addr_limit;
 #else
@@ -159,7 +159,7 @@ struct paca_struct {
 	u64 saved_r1;			/* r1 save for RTAS calls or PM */
 	u64 saved_msr;			/* MSR saved here by enter_rtas */
 	u16 trap_save;			/* Used when bad stack is encountered */
-	u8 soft_enabled;		/* irq soft-enable flag */
+	u8 irq_soft_mask;		/* mask for irq soft masking */
 	u8 irq_happened;		/* irq happened while soft-disabled */
 	u8 io_sync;			/* writel() needs spin_unlock sync */
 	u8 irq_work_pending;		/* IRQ_WORK interrupt while soft-disable */
@@ -239,8 +239,7 @@ struct paca_struct {
 	 */
 	u64 exrfi[EX_SIZE] __aligned(0x80);
 	void *rfi_flush_fallback_area;
-	u64 l1d_flush_congruence;
-	u64 l1d_flush_sets;
+	u64 l1d_flush_size;
 #endif
 };
 

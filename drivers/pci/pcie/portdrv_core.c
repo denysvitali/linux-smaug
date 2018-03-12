@@ -15,9 +15,9 @@
 #include <linux/pm_runtime.h>
 #include <linux/string.h>
 #include <linux/slab.h>
-#include <linux/pcieport_if.h>
 #include <linux/aer.h>
 
+#include "../pcieport_if.h"
 #include "../pci.h"
 #include "portdrv.h"
 
@@ -52,7 +52,7 @@ static void release_pcie_device(struct device *dev)
 static int pcie_message_numbers(struct pci_dev *dev, int mask,
 				u32 *pme, u32 *aer, u32 *dpc)
 {
-	u32 nvec = 0, pos, reg32;
+	u32 nvec = 0, pos;
 	u16 reg16;
 
 	/*
@@ -68,8 +68,11 @@ static int pcie_message_numbers(struct pci_dev *dev, int mask,
 		nvec = *pme + 1;
 	}
 
+#ifdef CONFIG_PCIEAER
 	if (mask & PCIE_PORT_SERVICE_AER) {
-		pos = pci_find_ext_capability(dev, PCI_EXT_CAP_ID_ERR);
+		u32 reg32;
+
+		pos = dev->aer_cap;
 		if (pos) {
 			pci_read_config_dword(dev, pos + PCI_ERR_ROOT_STATUS,
 					      &reg32);
@@ -77,6 +80,7 @@ static int pcie_message_numbers(struct pci_dev *dev, int mask,
 			nvec = max(nvec, *aer + 1);
 		}
 	}
+#endif
 
 	if (mask & PCIE_PORT_SERVICE_DPC) {
 		pos = pci_find_ext_capability(dev, PCI_EXT_CAP_ID_DPC);
@@ -216,9 +220,9 @@ static int get_port_device_capability(struct pci_dev *dev)
 		return 0;
 
 	cap_mask = PCIE_PORT_SERVICE_PME | PCIE_PORT_SERVICE_HP
-			| PCIE_PORT_SERVICE_VC | PCIE_PORT_SERVICE_DPC;
+			| PCIE_PORT_SERVICE_VC;
 	if (pci_aer_available())
-		cap_mask |= PCIE_PORT_SERVICE_AER;
+		cap_mask |= PCIE_PORT_SERVICE_AER | PCIE_PORT_SERVICE_DPC;
 
 	if (pcie_ports_auto)
 		pcie_port_platform_notify(dev, &cap_mask);
@@ -233,9 +237,10 @@ static int get_port_device_capability(struct pci_dev *dev)
 		pcie_capability_clear_word(dev, PCI_EXP_SLTCTL,
 			  PCI_EXP_SLTCTL_CCIE | PCI_EXP_SLTCTL_HPIE);
 	}
+
+#ifdef CONFIG_PCIEAER
 	/* AER capable */
-	if ((cap_mask & PCIE_PORT_SERVICE_AER)
-	    && pci_find_ext_capability(dev, PCI_EXT_CAP_ID_ERR)) {
+	if ((cap_mask & PCIE_PORT_SERVICE_AER) && dev->aer_cap) {
 		services |= PCIE_PORT_SERVICE_AER;
 		/*
 		 * Disable AER on this port in case it's been enabled by the
@@ -243,6 +248,8 @@ static int get_port_device_capability(struct pci_dev *dev)
 		 */
 		pci_disable_pcie_error_reporting(dev);
 	}
+#endif
+
 	/* VC support */
 	if (pci_find_ext_capability(dev, PCI_EXT_CAP_ID_VC))
 		services |= PCIE_PORT_SERVICE_VC;

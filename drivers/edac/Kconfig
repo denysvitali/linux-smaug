@@ -254,7 +254,7 @@ config EDAC_MPC85XX
 
 config EDAC_LAYERSCAPE
 	tristate "Freescale Layerscape DDR"
-	depends on ARCH_LAYERSCAPE
+	depends on ARCH_LAYERSCAPE || SOC_LS1021A
 	help
 	  Support for error detection and correction on Freescale memory
 	  controllers on Layerscape SoCs.
@@ -456,5 +456,12 @@ config EDAC_XGENE
 	help
 	  Support for error detection and correction on the
 	  APM X-Gene family of SOCs.
+
+config EDAC_TI
+	tristate "Texas Instruments DDR3 ECC Controller"
+	depends on ARCH_KEYSTONE || SOC_DRA7XX
+	help
+	  Support for error detection and correction on the
+          TI SoCs.
 
 endif # EDAC

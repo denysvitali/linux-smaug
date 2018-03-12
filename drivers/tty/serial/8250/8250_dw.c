@@ -9,6 +9,7 @@
  * LCR is written whilst busy.  If it is, then a busy detect interrupt is
  * raised, the LCR needs to be rewritten and the uart status register read.
  */
+#include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/io.h>
 #include <linux/module.h>
@@ -119,9 +120,26 @@ static void dw8250_check_lcr(struct uart_port *p, int value)
 	 */
 }
 
+/* Returns once the transmitter is empty or we run out of retries */
+static void dw8250_tx_wait_empty(struct uart_port *p, int tries)
+{
+	unsigned int lsr;
+
+	while (tries--) {
+		lsr = readb (p->membase + (UART_LSR << p->regshift));
+		if (lsr & UART_LSR_TEMT)
+			break;
+		udelay (10);
+	}
+}
+
 static void dw8250_serial_out(struct uart_port *p, int offset, int value)
 {
 	struct dw8250_data *d = p->private_data;
+
+	/* Allow the TX to drain before we reconfigure */
+	if (offset == UART_LCR)
+		dw8250_tx_wait_empty(p, 1000);
 
 	writeb(value, p->membase + (offset << p->regshift));
 
@@ -509,7 +527,8 @@ static int dw8250_probe(struct platform_device *pdev)
 	/* If no clock rate is defined, fail. */
 	if (!p->uartclk) {
 		dev_err(dev, "clock rate not defined\n");
-		return -EINVAL;
+		err = -EINVAL;
+		goto err_clk;
 	}
 
 	data->pclk = devm_clk_get(dev, "apb_pclk");

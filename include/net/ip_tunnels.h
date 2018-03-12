@@ -116,8 +116,11 @@ struct ip_tunnel {
 	u32		o_seqno;	/* The last output seqno */
 	int		tun_hlen;	/* Precalculated header length */
 
-	/* This field used only by ERSPAN */
+	/* These four fields used only by ERSPAN */
 	u32		index;		/* ERSPAN type II index */
+	u8		erspan_ver;	/* ERSPAN version */
+	u8		dir;		/* ERSPAN direction */
+	u16		hwid;		/* ERSPAN hardware ID */
 
 	struct dst_cache dst_cache;
 
@@ -250,6 +253,22 @@ static inline __be32 tunnel_id_to_key32(__be64 tun_id)
 }
 
 #ifdef CONFIG_INET
+
+static inline void ip_tunnel_init_flow(struct flowi4 *fl4,
+				       int proto,
+				       __be32 daddr, __be32 saddr,
+				       __be32 key, __u8 tos, int oif,
+				       __u32 mark)
+{
+	memset(fl4, 0, sizeof(*fl4));
+	fl4->flowi4_oif = oif;
+	fl4->daddr = daddr;
+	fl4->saddr = saddr;
+	fl4->flowi4_tos = tos;
+	fl4->flowi4_proto = proto;
+	fl4->fl4_gre_key = key;
+	fl4->flowi4_mark = mark;
+}
 
 int ip_tunnel_init(struct net_device *dev);
 void ip_tunnel_uninit(struct net_device *dev);

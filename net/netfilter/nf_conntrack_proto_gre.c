@@ -48,7 +48,7 @@ enum grep_conntrack {
 	GRE_CT_MAX
 };
 
-static unsigned int gre_timeouts[GRE_CT_MAX] = {
+static const unsigned int gre_timeouts[GRE_CT_MAX] = {
 	[GRE_CT_UNREPLIED]	= 30*HZ,
 	[GRE_CT_REPLIED]	= 180*HZ,
 };
@@ -352,7 +352,7 @@ static int gre_init_net(struct net *net, u_int16_t proto)
 }
 
 /* protocol helper struct */
-static struct nf_conntrack_l4proto nf_conntrack_l4proto_gre4 __read_mostly = {
+static const struct nf_conntrack_l4proto nf_conntrack_l4proto_gre4 = {
 	.l3proto	 = AF_INET,
 	.l4proto	 = IPPROTO_GRE,
 	.pkt_to_tuple	 = gre_pkt_to_tuple,
@@ -406,6 +406,7 @@ static struct pernet_operations proto_gre_net_ops = {
 	.exit = proto_gre_net_exit,
 	.id   = &proto_gre_net_id,
 	.size = sizeof(struct netns_proto_gre),
+	.async = true,
 };
 
 static int __init nf_ct_proto_gre_init(void)

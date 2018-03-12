@@ -20,6 +20,7 @@ static inline void __iomem * ioremap (unsigned long offset, unsigned long size)
 extern void iounmap(volatile void * __iomem addr);
 
 extern void __iomem * ioremap_nocache(unsigned long offset, unsigned long size);
+#define ioremap_nocache ioremap_nocache
 
 #include <asm-generic/io.h>
 

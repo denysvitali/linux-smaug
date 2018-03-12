@@ -531,19 +531,19 @@ static ssize_t ppp_write(struct file *file, const char __user *buf,
 }
 
 /* No kernel lock - fine */
-static unsigned int ppp_poll(struct file *file, poll_table *wait)
+static __poll_t ppp_poll(struct file *file, poll_table *wait)
 {
 	struct ppp_file *pf = file->private_data;
-	unsigned int mask;
+	__poll_t mask;
 
 	if (!pf)
 		return 0;
 	poll_wait(file, &pf->rwait, wait);
-	mask = POLLOUT | POLLWRNORM;
+	mask = EPOLLOUT | EPOLLWRNORM;
 	if (skb_peek(&pf->rq))
-		mask |= POLLIN | POLLRDNORM;
+		mask |= EPOLLIN | EPOLLRDNORM;
 	if (pf->dead)
-		mask |= POLLHUP;
+		mask |= EPOLLHUP;
 	else if (pf->kind == INTERFACE) {
 		/* see comment in ppp_read */
 		struct ppp *ppp = PF_TO_PPP(pf);
@@ -551,7 +551,7 @@ static unsigned int ppp_poll(struct file *file, poll_table *wait)
 		ppp_recv_lock(ppp);
 		if (ppp->n_channels == 0 &&
 		    (ppp->flags & SC_LOOP_TRAFFIC) == 0)
-			mask |= POLLIN | POLLRDNORM;
+			mask |= EPOLLIN | EPOLLRDNORM;
 		ppp_recv_unlock(ppp);
 	}
 
@@ -971,6 +971,7 @@ static struct pernet_operations ppp_net_ops = {
 	.exit = ppp_exit_net,
 	.id   = &ppp_net_id,
 	.size = sizeof(struct ppp_net),
+	.async = true,
 };
 
 static int ppp_unit_register(struct ppp *ppp, int unit, bool ifname_is_set)
@@ -3161,6 +3162,15 @@ ppp_connect_channel(struct channel *pch, int unit)
 		goto outl;
 
 	ppp_lock(ppp);
+	spin_lock_bh(&pch->downl);
+	if (!pch->chan) {
+		/* Don't connect unregistered channels */
+		spin_unlock_bh(&pch->downl);
+		ppp_unlock(ppp);
+		ret = -ENOTCONN;
+		goto outl;
+	}
+	spin_unlock_bh(&pch->downl);
 	if (pch->file.hdrlen > ppp->file.hdrlen)
 		ppp->file.hdrlen = pch->file.hdrlen;
 	hdrlen = pch->file.hdrlen + 2;	/* for protocol bytes */

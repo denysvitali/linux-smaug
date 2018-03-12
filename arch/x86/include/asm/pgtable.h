@@ -65,7 +65,7 @@ extern pmdval_t early_pmd_flags;
 
 #ifndef __PAGETABLE_P4D_FOLDED
 #define set_pgd(pgdp, pgd)		native_set_pgd(pgdp, pgd)
-#define pgd_clear(pgd)			native_pgd_clear(pgd)
+#define pgd_clear(pgd)			(pgtable_l5_enabled ? native_pgd_clear(pgd) : 0)
 #endif
 
 #ifndef set_p4d
@@ -350,14 +350,14 @@ static inline pmd_t pmd_set_flags(pmd_t pmd, pmdval_t set)
 {
 	pmdval_t v = native_pmd_val(pmd);
 
-	return __pmd(v | set);
+	return native_make_pmd(v | set);
 }
 
 static inline pmd_t pmd_clear_flags(pmd_t pmd, pmdval_t clear)
 {
 	pmdval_t v = native_pmd_val(pmd);
 
-	return __pmd(v & ~clear);
+	return native_make_pmd(v & ~clear);
 }
 
 static inline pmd_t pmd_mkold(pmd_t pmd)
@@ -409,14 +409,14 @@ static inline pud_t pud_set_flags(pud_t pud, pudval_t set)
 {
 	pudval_t v = native_pud_val(pud);
 
-	return __pud(v | set);
+	return native_make_pud(v | set);
 }
 
 static inline pud_t pud_clear_flags(pud_t pud, pudval_t clear)
 {
 	pudval_t v = native_pud_val(pud);
 
-	return __pud(v & ~clear);
+	return native_make_pud(v & ~clear);
 }
 
 static inline pud_t pud_mkold(pud_t pud)
@@ -859,6 +859,8 @@ static inline unsigned long p4d_index(unsigned long address)
 #if CONFIG_PGTABLE_LEVELS > 4
 static inline int pgd_present(pgd_t pgd)
 {
+	if (!pgtable_l5_enabled)
+		return 1;
 	return pgd_flags(pgd) & _PAGE_PRESENT;
 }
 
@@ -876,12 +878,17 @@ static inline unsigned long pgd_page_vaddr(pgd_t pgd)
 /* to find an entry in a page-table-directory. */
 static inline p4d_t *p4d_offset(pgd_t *pgd, unsigned long address)
 {
+	if (!pgtable_l5_enabled)
+		return (p4d_t *)pgd;
 	return (p4d_t *)pgd_page_vaddr(*pgd) + p4d_index(address);
 }
 
 static inline int pgd_bad(pgd_t pgd)
 {
 	unsigned long ignore_flags = _PAGE_USER;
+
+	if (!pgtable_l5_enabled)
+		return 0;
 
 	if (IS_ENABLED(CONFIG_PAGE_TABLE_ISOLATION))
 		ignore_flags |= _PAGE_NX;
@@ -891,6 +898,8 @@ static inline int pgd_bad(pgd_t pgd)
 
 static inline int pgd_none(pgd_t pgd)
 {
+	if (!pgtable_l5_enabled)
+		return 0;
 	/*
 	 * There is no need to do a workaround for the KNL stray
 	 * A/D bit erratum here.  PGDs only point to page tables
@@ -1108,6 +1117,21 @@ static inline int pud_write(pud_t pud)
 {
 	return pud_flags(pud) & _PAGE_RW;
 }
+
+#ifndef pmdp_establish
+#define pmdp_establish pmdp_establish
+static inline pmd_t pmdp_establish(struct vm_area_struct *vma,
+		unsigned long address, pmd_t *pmdp, pmd_t pmd)
+{
+	if (IS_ENABLED(CONFIG_SMP)) {
+		return xchg(pmdp, pmd);
+	} else {
+		pmd_t old = *pmdp;
+		*pmdp = pmd;
+		return old;
+	}
+}
+#endif
 
 /*
  * clone_pgd_range(pgd_t *dst, pgd_t *src, int count);

@@ -218,6 +218,8 @@ static int proc_dointvec_minmax_coredump(struct ctl_table *table, int write,
 static int proc_dostring_coredump(struct ctl_table *table, int write,
 		void __user *buffer, size_t *lenp, loff_t *ppos);
 #endif
+static int proc_dopipe_max_size(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos);
 
 #ifdef CONFIG_MAGIC_SYSRQ
 /* Note: sysrq code uses it's own private copy */
@@ -1374,13 +1376,6 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
 	 },
-	 {
-		.procname	= "hugepages_treat_as_movable",
-		.data		= &hugepages_treat_as_movable,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
-	},
 	{
 		.procname	= "nr_overcommit_hugepages",
 		.data		= NULL,
@@ -1819,8 +1814,7 @@ static struct ctl_table fs_table[] = {
 		.data		= &pipe_max_size,
 		.maxlen		= sizeof(pipe_max_size),
 		.mode		= 0644,
-		.proc_handler	= &pipe_proc_fn,
-		.extra1		= &pipe_min_size,
+		.proc_handler	= proc_dopipe_max_size,
 	},
 	{
 		.procname	= "pipe-user-pages-hard",
@@ -2506,22 +2500,65 @@ static int proc_dointvec_minmax_sysadmin(struct ctl_table *table, int write,
 }
 #endif
 
+/**
+ * struct do_proc_dointvec_minmax_conv_param - proc_dointvec_minmax() range checking structure
+ * @min: pointer to minimum allowable value
+ * @max: pointer to maximum allowable value
+ * @flags: pointer to flags
+ * @name: sysctl parameter name
+ *
+ * The do_proc_dointvec_minmax_conv_param structure provides the
+ * minimum and maximum values for doing range checking for those sysctl
+ * parameters that use the proc_dointvec_minmax() handler.
+ */
 struct do_proc_dointvec_minmax_conv_param {
 	int *min;
 	int *max;
+	uint16_t *flags;
+	const char *name;
 };
+
+/* Out of range warning message */
+#define proc_ctl_warn(type, ...)				  \
+	pr_warn("Kernel parameter \"%s\" was set out of range [%" \
+	#type ", %" #type "], clamped to %" #type ".\n", __VA_ARGS__)
 
 static int do_proc_dointvec_minmax_conv(bool *negp, unsigned long *lvalp,
 					int *valp,
 					int write, void *data)
 {
 	struct do_proc_dointvec_minmax_conv_param *param = data;
+
 	if (write) {
 		int val = *negp ? -*lvalp : *lvalp;
-		if ((param->min && *param->min > val) ||
-		    (param->max && *param->max < val))
-			return -EINVAL;
+		bool clamped = false;
+		bool clamp = param->flags &&
+			   (*param->flags & CTL_FLAGS_CLAMP_RANGE);
+
+		if (param->min && *param->min > val) {
+			if (clamp) {
+				val = *param->min;
+				clamped = true;
+			} else {
+				return -EINVAL;
+			}
+		}
+		if (param->max && *param->max < val) {
+			if (clamp) {
+				val = *param->max;
+				clamped = true;
+			} else {
+				return -EINVAL;
+			}
+		}
 		*valp = val;
+		if (clamped && param->name &&
+		   !(*param->flags & CTL_FLAGS_OOR_WARNED)) {
+			proc_ctl_warn(d, param->name,
+				param->min ? *param->min : -INT_MAX,
+				param->max ? *param->max :  INT_MAX, val);
+			*param->flags |= CTL_FLAGS_OOR_WARNED;
+		}
 	} else {
 		int val = *valp;
 		if (val < 0) {
@@ -2549,7 +2586,8 @@ static int do_proc_dointvec_minmax_conv(bool *negp, unsigned long *lvalp,
  * This routine will ensure the values are within the range specified by
  * table->extra1 (min) and table->extra2 (max).
  *
- * Returns 0 on success.
+ * Returns 0 on success or -EINVAL on write when the range check fails
+ * without the CTL_FLAGS_CLAMP_RANGE flag.
  */
 int proc_dointvec_minmax(struct ctl_table *table, int write,
 		  void __user *buffer, size_t *lenp, loff_t *ppos)
@@ -2557,14 +2595,29 @@ int proc_dointvec_minmax(struct ctl_table *table, int write,
 	struct do_proc_dointvec_minmax_conv_param param = {
 		.min = (int *) table->extra1,
 		.max = (int *) table->extra2,
+		.flags = &table->flags,
+		.name  = table->procname,
 	};
 	return do_proc_dointvec(table, write, buffer, lenp, ppos,
 				do_proc_dointvec_minmax_conv, &param);
 }
 
+/**
+ * struct do_proc_douintvec_minmax_conv_param - proc_douintvec_minmax() range checking structure
+ * @min: pointer to minimum allowable value
+ * @max: pointer to maximum allowable value
+ * @flags: pointer to flags
+ * @name: sysctl parameter name
+ *
+ * The do_proc_douintvec_minmax_conv_param structure provides the
+ * minimum and maximum values for doing range checking for those sysctl
+ * parameters that use the proc_douintvec_minmax() handler.
+ */
 struct do_proc_douintvec_minmax_conv_param {
 	unsigned int *min;
 	unsigned int *max;
+	uint16_t *flags;
+	const char *name;
 };
 
 static int do_proc_douintvec_minmax_conv(unsigned long *lvalp,
@@ -2575,15 +2628,37 @@ static int do_proc_douintvec_minmax_conv(unsigned long *lvalp,
 
 	if (write) {
 		unsigned int val = *lvalp;
+		bool clamped = false;
+		bool clamp = param->flags &&
+			   (*param->flags & CTL_FLAGS_CLAMP_RANGE);
 
 		if (*lvalp > UINT_MAX)
 			return -EINVAL;
 
-		if ((param->min && *param->min > val) ||
-		    (param->max && *param->max < val))
-			return -ERANGE;
-
+		if (param->min && *param->min > val) {
+			if (clamp) {
+				val = *param->min;
+				clamped = true;
+			} else {
+				return -ERANGE;
+			}
+		}
+		if (param->max && *param->max < val) {
+			if (clamp) {
+				val = *param->max;
+				clamped = true;
+			} else {
+				return -ERANGE;
+			}
+		}
 		*valp = val;
+		if (clamped && param->name &&
+		   !(*param->flags & CTL_FLAGS_OOR_WARNED)) {
+			proc_ctl_warn(u, param->name,
+				param->min ? *param->min : 0,
+				param->max ? *param->max : UINT_MAX, val);
+			*param->flags |= CTL_FLAGS_OOR_WARNED;
+		}
 	} else {
 		unsigned int val = *valp;
 		*lvalp = (unsigned long) val;
@@ -2609,7 +2684,8 @@ static int do_proc_douintvec_minmax_conv(unsigned long *lvalp,
  * check for UINT_MAX to avoid having to support wrap around uses from
  * userspace.
  *
- * Returns 0 on success.
+ * Returns 0 on success or -ERANGE on write when the range check fails
+ * without the CTL_FLAGS_CLAMP_RANGE flag.
  */
 int proc_douintvec_minmax(struct ctl_table *table, int write,
 			  void __user *buffer, size_t *lenp, loff_t *ppos)
@@ -2617,33 +2693,23 @@ int proc_douintvec_minmax(struct ctl_table *table, int write,
 	struct do_proc_douintvec_minmax_conv_param param = {
 		.min = (unsigned int *) table->extra1,
 		.max = (unsigned int *) table->extra2,
+		.flags = &table->flags,
+		.name  = table->procname,
 	};
 	return do_proc_douintvec(table, write, buffer, lenp, ppos,
 				 do_proc_douintvec_minmax_conv, &param);
 }
 
-struct do_proc_dopipe_max_size_conv_param {
-	unsigned int *min;
-};
-
 static int do_proc_dopipe_max_size_conv(unsigned long *lvalp,
 					unsigned int *valp,
 					int write, void *data)
 {
-	struct do_proc_dopipe_max_size_conv_param *param = data;
-
 	if (write) {
 		unsigned int val;
-
-		if (*lvalp > UINT_MAX)
-			return -EINVAL;
 
 		val = round_pipe_size(*lvalp);
 		if (val == 0)
 			return -EINVAL;
-
-		if (param->min && *param->min > val)
-			return -ERANGE;
 
 		*valp = val;
 	} else {
@@ -2654,14 +2720,11 @@ static int do_proc_dopipe_max_size_conv(unsigned long *lvalp,
 	return 0;
 }
 
-int proc_dopipe_max_size(struct ctl_table *table, int write,
-			 void __user *buffer, size_t *lenp, loff_t *ppos)
+static int proc_dopipe_max_size(struct ctl_table *table, int write,
+				void __user *buffer, size_t *lenp, loff_t *ppos)
 {
-	struct do_proc_dopipe_max_size_conv_param param = {
-		.min = (unsigned int *) table->extra1,
-	};
 	return do_proc_douintvec(table, write, buffer, lenp, ppos,
-				 do_proc_dopipe_max_size_conv, &param);
+				 do_proc_dopipe_max_size_conv, NULL);
 }
 
 static void validate_coredump_safety(void)
@@ -3167,12 +3230,6 @@ int proc_douintvec_minmax(struct ctl_table *table, int write,
 	return -ENOSYS;
 }
 
-int proc_dopipe_max_size(struct ctl_table *table, int write,
-			 void __user *buffer, size_t *lenp, loff_t *ppos)
-{
-	return -ENOSYS;
-}
-
 int proc_dointvec_jiffies(struct ctl_table *table, int write,
 		    void __user *buffer, size_t *lenp, loff_t *ppos)
 {
@@ -3216,7 +3273,6 @@ EXPORT_SYMBOL(proc_douintvec);
 EXPORT_SYMBOL(proc_dointvec_jiffies);
 EXPORT_SYMBOL(proc_dointvec_minmax);
 EXPORT_SYMBOL_GPL(proc_douintvec_minmax);
-EXPORT_SYMBOL_GPL(proc_dopipe_max_size);
 EXPORT_SYMBOL(proc_dointvec_userhz_jiffies);
 EXPORT_SYMBOL(proc_dointvec_ms_jiffies);
 EXPORT_SYMBOL(proc_dostring);

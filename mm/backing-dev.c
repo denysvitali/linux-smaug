@@ -100,18 +100,7 @@ static int bdi_debug_stats_show(struct seq_file *m, void *v)
 
 	return 0;
 }
-
-static int bdi_debug_stats_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, bdi_debug_stats_show, inode->i_private);
-}
-
-static const struct file_operations bdi_debug_stats_fops = {
-	.open		= bdi_debug_stats_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
+DEFINE_SHOW_ATTRIBUTE(bdi_debug_stats);
 
 static int bdi_debug_register(struct backing_dev_info *bdi, const char *name)
 {
@@ -231,11 +220,46 @@ static ssize_t stable_pages_required_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(stable_pages_required);
 
+static ssize_t strictlimit_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct backing_dev_info *bdi = dev_get_drvdata(dev);
+	unsigned int val;
+	ssize_t ret;
+
+	ret = kstrtouint(buf, 10, &val);
+	if (ret < 0)
+		return ret;
+
+	switch (val) {
+	case 0:
+		bdi->capabilities &= ~BDI_CAP_STRICTLIMIT;
+		break;
+	case 1:
+		bdi->capabilities |= BDI_CAP_STRICTLIMIT;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return count;
+}
+static ssize_t strictlimit_show(struct device *dev,
+		struct device_attribute *attr, char *page)
+{
+	struct backing_dev_info *bdi = dev_get_drvdata(dev);
+
+	return snprintf(page, PAGE_SIZE-1, "%d\n",
+			!!(bdi->capabilities & BDI_CAP_STRICTLIMIT));
+}
+static DEVICE_ATTR_RW(strictlimit);
+
 static struct attribute *bdi_dev_attrs[] = {
 	&dev_attr_read_ahead_kb.attr,
 	&dev_attr_min_ratio.attr,
 	&dev_attr_max_ratio.attr,
 	&dev_attr_stable_pages_required.attr,
+	&dev_attr_strictlimit.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(bdi_dev);
@@ -745,7 +769,6 @@ static void cgwb_bdi_unregister(struct backing_dev_info *bdi)
  */
 void wb_memcg_offline(struct mem_cgroup *memcg)
 {
-	LIST_HEAD(to_destroy);
 	struct list_head *memcg_cgwb_list = mem_cgroup_cgwb_list(memcg);
 	struct bdi_writeback *wb, *next;
 
@@ -764,7 +787,6 @@ void wb_memcg_offline(struct mem_cgroup *memcg)
  */
 void wb_blkcg_offline(struct blkcg *blkcg)
 {
-	LIST_HEAD(to_destroy);
 	struct bdi_writeback *wb, *next;
 
 	spin_lock_irq(&cgwb_lock);

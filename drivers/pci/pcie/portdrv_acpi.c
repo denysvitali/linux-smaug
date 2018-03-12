@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * PCIe Port Native Services Support, ACPI-Related Part
  *
  * Copyright (C) 2010 Rafael J. Wysocki <rjw@sisk.pl>, Novell Inc.
- *
- * This file is subject to the terms and conditions of the GNU General Public
- * License V2.  See the file "COPYING" in the main directory of this archive
- * for more details.
  */
 
 #include <linux/pci.h>
@@ -13,8 +10,8 @@
 #include <linux/errno.h>
 #include <linux/acpi.h>
 #include <linux/pci-acpi.h>
-#include <linux/pcieport_if.h>
 
+#include "../pcieport_if.h"
 #include "aer/aerdrv.h"
 #include "../pci.h"
 #include "portdrv.h"

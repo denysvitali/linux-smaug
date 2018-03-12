@@ -285,8 +285,7 @@ static void task_fpsimd_save(void)
 				 * re-enter user with corrupt state.
 				 * There's no way to recover, so kill it:
 				 */
-				force_signal_inject(
-					SIGKILL, 0, current_pt_regs(), 0);
+				force_signal_inject(SIGKILL, 0, 0);
 				return;
 			}
 
@@ -831,7 +830,7 @@ asmlinkage void do_sve_acc(unsigned int esr, struct pt_regs *regs)
 {
 	/* Even if we chose not to use SVE, the hardware could still trap: */
 	if (unlikely(!system_supports_sve()) || WARN_ON(is_compat_task())) {
-		force_signal_inject(SIGILL, ILL_ILLOPC, regs, 0);
+		force_signal_inject(SIGILL, ILL_ILLOPC, regs->pc);
 		return;
 	}
 
@@ -867,7 +866,7 @@ asmlinkage void do_fpsimd_acc(unsigned int esr, struct pt_regs *regs)
 asmlinkage void do_fpsimd_exc(unsigned int esr, struct pt_regs *regs)
 {
 	siginfo_t info;
-	unsigned int si_code = 0;
+	unsigned int si_code = FPE_FIXME;
 
 	if (esr & FPEXC_IOF)
 		si_code = FPE_FLTINV;
@@ -1036,14 +1035,14 @@ void fpsimd_restore_current_state(void)
  * flag that indicates that the FPSIMD register contents are the most recent
  * FPSIMD state of 'current'
  */
-void fpsimd_update_current_state(struct fpsimd_state *state)
+void fpsimd_update_current_state(struct user_fpsimd_state const *state)
 {
 	if (!system_supports_fpsimd())
 		return;
 
 	local_bh_disable();
 
-	current->thread.fpsimd_state.user_fpsimd = state->user_fpsimd;
+	current->thread.fpsimd_state.user_fpsimd = *state;
 	if (system_supports_sve() && test_thread_flag(TIF_SVE))
 		fpsimd_to_sve(current);
 

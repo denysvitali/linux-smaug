@@ -217,7 +217,7 @@ config ENABLE_MUST_CHECK
 config FRAME_WARN
 	int "Warn for stack frames larger than (needs gcc 4.4)"
 	range 0 8192
-	default 0 if KASAN
+	default 3072 if KASAN_EXTRA
 	default 2048 if GCC_PLUGIN_LATENT_ENTROPY
 	default 1280 if (!64BIT && PARISC)
 	default 1024 if (!64BIT && !PARISC)
@@ -324,11 +324,11 @@ config DEBUG_SECTION_MISMATCH
 	    the analysis would not catch the illegal reference.
 	    This option tells gcc to inline less (but it does result in
 	    a larger kernel).
-	  - Run the section mismatch analysis for each module/built-in.o file.
+	  - Run the section mismatch analysis for each module/built-in.a file.
 	    When we run the section mismatch analysis on vmlinux.o, we
 	    lose valuable information about where the mismatch was
 	    introduced.
-	    Running the analysis for each module/built-in.o file
+	    Running the analysis for each module/built-in.a file
 	    tells where the mismatch happens much closer to the
 	    source. The drawback is that the same mismatch is
 	    reported at least twice.
@@ -351,13 +351,12 @@ config SECTION_MISMATCH_WARN_ONLY
 #
 config ARCH_WANT_FRAME_POINTERS
 	bool
-	help
 
 config FRAME_POINTER
 	bool "Compile the kernel with frame pointers"
 	depends on DEBUG_KERNEL && \
 		(CRIS || M68K || FRV || UML || \
-		 SUPERH || BLACKFIN || MN10300 || METAG) || \
+		 SUPERH || BLACKFIN || MN10300) || \
 		ARCH_WANT_FRAME_POINTERS
 	default y if (DEBUG_INFO && UML) || ARCH_WANT_FRAME_POINTERS
 	help
@@ -804,6 +803,30 @@ config SOFTLOCKUP_DETECTOR
 	  chance to run.  The current stack trace is displayed upon
 	  detection and the system will stay locked up.
 
+config BOOTPARAM_SOFTLOCKUP_PANIC
+	bool "Panic (Reboot) On Soft Lockups"
+	depends on SOFTLOCKUP_DETECTOR
+	help
+	  Say Y here to enable the kernel to panic on "soft lockups",
+	  which are bugs that cause the kernel to loop in kernel
+	  mode for more than 20 seconds (configurable using the watchdog_thresh
+	  sysctl), without giving other tasks a chance to run.
+
+	  The panic can be used in combination with panic_timeout,
+	  to cause the system to reboot automatically after a
+	  lockup has been detected. This feature is useful for
+	  high-availability systems that have uptime guarantees and
+	  where a lockup must be resolved ASAP.
+
+	  Say N if unsure.
+
+config BOOTPARAM_SOFTLOCKUP_PANIC_VALUE
+	int
+	depends on SOFTLOCKUP_DETECTOR
+	range 0 1
+	default 0 if !BOOTPARAM_SOFTLOCKUP_PANIC
+	default 1 if BOOTPARAM_SOFTLOCKUP_PANIC
+
 config HARDLOCKUP_DETECTOR_PERF
 	bool
 	select SOFTLOCKUP_DETECTOR
@@ -852,30 +875,6 @@ config BOOTPARAM_HARDLOCKUP_PANIC_VALUE
 	range 0 1
 	default 0 if !BOOTPARAM_HARDLOCKUP_PANIC
 	default 1 if BOOTPARAM_HARDLOCKUP_PANIC
-
-config BOOTPARAM_SOFTLOCKUP_PANIC
-	bool "Panic (Reboot) On Soft Lockups"
-	depends on SOFTLOCKUP_DETECTOR
-	help
-	  Say Y here to enable the kernel to panic on "soft lockups",
-	  which are bugs that cause the kernel to loop in kernel
-	  mode for more than 20 seconds (configurable using the watchdog_thresh
-	  sysctl), without giving other tasks a chance to run.
-
-	  The panic can be used in combination with panic_timeout,
-	  to cause the system to reboot automatically after a
-	  lockup has been detected. This feature is useful for
-	  high-availability systems that have uptime guarantees and
-	  where a lockup must be resolved ASAP.
-
-	  Say N if unsure.
-
-config BOOTPARAM_SOFTLOCKUP_PANIC_VALUE
-	int
-	depends on SOFTLOCKUP_DETECTOR
-	range 0 1
-	default 0 if !BOOTPARAM_SOFTLOCKUP_PANIC
-	default 1 if BOOTPARAM_SOFTLOCKUP_PANIC
 
 config DETECT_HUNG_TASK
 	bool "Detect Hung Tasks"
@@ -1500,6 +1499,10 @@ config FAULT_INJECTION
 	  Provide fault-injection framework.
 	  For more details, see Documentation/fault-injection/.
 
+config FUNCTION_ERROR_INJECTION
+	def_bool y
+	depends on HAVE_FUNCTION_ERROR_INJECTION && KPROBES
+
 config FAILSLAB
 	bool "Fault-injection capability for kmalloc"
 	depends on FAULT_INJECTION
@@ -1546,6 +1549,16 @@ config FAIL_FUTEX
 	depends on FAULT_INJECTION && FUTEX
 	help
 	  Provide fault-injection capability for futexes.
+
+config FAIL_FUNCTION
+	bool "Fault-injection capability for functions"
+	depends on FAULT_INJECTION_DEBUG_FS && FUNCTION_ERROR_INJECTION
+	help
+	  Provide function-based fault-injection capability.
+	  This will allow you to override a specific function with a return
+	  with given return value. As a result, function caller will see
+	  an error value and have to handle it. This is useful to test the
+	  error handling in various subsystems.
 
 config FAULT_INJECTION_DEBUG_FS
 	bool "Debugfs entries for fault-injection capabilities"
@@ -1627,7 +1640,11 @@ config DMA_API_DEBUG
 
 	  If unsure, say N.
 
-menu "Runtime Testing"
+menuconfig RUNTIME_TESTING_MENU
+	bool "Runtime Testing"
+	def_bool y
+
+if RUNTIME_TESTING_MENU
 
 config LKDTM
 	tristate "Linux Kernel Dump Test Tool Module"
@@ -1827,7 +1844,7 @@ config TEST_BPF
 
 	  If unsure, say N.
 
-config TEST_FIND_BIT
+config FIND_BIT_BENCHMARK
 	tristate "Test find_bit functions"
 	default n
 	help
@@ -1915,7 +1932,7 @@ config TEST_DEBUG_VIRTUAL
 
 	  If unsure, say N.
 
-endmenu # runtime tests
+endif # RUNTIME_TESTING_MENU
 
 config MEMTEST
 	bool "Memtest"
@@ -1952,7 +1969,7 @@ config STRICT_DEVMEM
 	bool "Filter access to /dev/mem"
 	depends on MMU && DEVMEM
 	depends on ARCH_HAS_DEVMEM_IS_ALLOWED
-	default y if TILE || PPC
+	default y if TILE || PPC || X86 || ARM64
 	---help---
 	  If this option is disabled, you allow userspace (root) access to all
 	  of memory, including kernel and userspace memory. Accidental

@@ -112,23 +112,26 @@ int phm_force_dpm_levels(struct pp_hwmgr *hwmgr, enum amd_dpm_forced_level level
 
 	PHM_FUNC_CHECK(hwmgr);
 
-	if (hwmgr->hwmgr_func->force_dpm_level != NULL) {
+	if (hwmgr->hwmgr_func->force_dpm_level != NULL)
 		ret = hwmgr->hwmgr_func->force_dpm_level(hwmgr, level);
-		if (ret)
-			return ret;
 
-		if (hwmgr->hwmgr_func->set_power_profile_state) {
-			if (hwmgr->current_power_profile == AMD_PP_GFX_PROFILE)
-				ret = hwmgr->hwmgr_func->set_power_profile_state(
-						hwmgr,
-						&hwmgr->gfx_power_profile);
-			else if (hwmgr->current_power_profile == AMD_PP_COMPUTE_PROFILE)
-				ret = hwmgr->hwmgr_func->set_power_profile_state(
-						hwmgr,
-						&hwmgr->compute_power_profile);
-		}
+	return ret;
+}
+
+int phm_reset_power_profile_state(struct pp_hwmgr *hwmgr)
+{
+	int ret = 0;
+
+	if (hwmgr->hwmgr_func->set_power_profile_state) {
+		if (hwmgr->current_power_profile == AMD_PP_GFX_PROFILE)
+			ret = hwmgr->hwmgr_func->set_power_profile_state(
+					hwmgr,
+					&hwmgr->gfx_power_profile);
+		else if (hwmgr->current_power_profile == AMD_PP_COMPUTE_PROFILE)
+			ret = hwmgr->hwmgr_func->set_power_profile_state(
+					hwmgr,
+					&hwmgr->compute_power_profile);
 	}
-
 	return ret;
 }
 
@@ -220,26 +223,25 @@ int phm_register_thermal_interrupt(struct pp_hwmgr *hwmgr, const void *info)
 * Initializes the thermal controller subsystem.
 *
 * @param    pHwMgr  the address of the powerplay hardware manager.
-* @param    pTemperatureRange the address of the structure holding the temperature range.
 * @exception PP_Result_Failed if any of the paramters is NULL, otherwise the return value from the dispatcher.
 */
-int phm_start_thermal_controller(struct pp_hwmgr *hwmgr, struct PP_TemperatureRange *temperature_range)
+int phm_start_thermal_controller(struct pp_hwmgr *hwmgr)
 {
-	struct PP_TemperatureRange range;
+	int ret = 0;
+	struct PP_TemperatureRange range = {TEMP_RANGE_MIN, TEMP_RANGE_MAX};
 
-	if (temperature_range == NULL) {
-		range.max = TEMP_RANGE_MAX;
-		range.min = TEMP_RANGE_MIN;
-	} else {
-		range.max = temperature_range->max;
-		range.min = temperature_range->min;
-	}
+	if (hwmgr->hwmgr_func->get_thermal_temperature_range)
+		hwmgr->hwmgr_func->get_thermal_temperature_range(
+				hwmgr, &range);
+
 	if (phm_cap_enabled(hwmgr->platform_descriptor.platformCaps,
 			PHM_PlatformCaps_ThermalController)
 			&& hwmgr->hwmgr_func->start_thermal_controller != NULL)
-		return hwmgr->hwmgr_func->start_thermal_controller(hwmgr, &range);
+		ret = hwmgr->hwmgr_func->start_thermal_controller(hwmgr, &range);
 
-	return 0;
+	cgs_set_temperature_range(hwmgr->device, range.min, range.max);
+
+	return ret;
 }
 
 

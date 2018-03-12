@@ -101,7 +101,6 @@ void iwl_mvm_te_clear_data(struct iwl_mvm *mvm,
 void iwl_mvm_roc_done_wk(struct work_struct *wk)
 {
 	struct iwl_mvm *mvm = container_of(wk, struct iwl_mvm, roc_done_wk);
-	u32 queues = 0;
 
 	/*
 	 * Clear the ROC_RUNNING /ROC_AUX_RUNNING status bit.
@@ -110,14 +109,10 @@ void iwl_mvm_roc_done_wk(struct work_struct *wk)
 	 * in the case that the time event actually completed in the firmware
 	 * (which is handled in iwl_mvm_te_handle_notif).
 	 */
-	if (test_and_clear_bit(IWL_MVM_STATUS_ROC_RUNNING, &mvm->status)) {
-		queues |= BIT(IWL_MVM_OFFCHANNEL_QUEUE);
+	if (test_and_clear_bit(IWL_MVM_STATUS_ROC_RUNNING, &mvm->status))
 		iwl_mvm_unref(mvm, IWL_MVM_REF_ROC);
-	}
-	if (test_and_clear_bit(IWL_MVM_STATUS_ROC_AUX_RUNNING, &mvm->status)) {
-		queues |= BIT(mvm->aux_queue);
+	if (test_and_clear_bit(IWL_MVM_STATUS_ROC_AUX_RUNNING, &mvm->status))
 		iwl_mvm_unref(mvm, IWL_MVM_REF_ROC_AUX);
-	}
 
 	synchronize_net();
 
@@ -621,7 +616,7 @@ void iwl_mvm_protect_session(struct iwl_mvm *mvm,
 	time_cmd.repeat = 1;
 	time_cmd.policy = cpu_to_le16(TE_V2_NOTIF_HOST_EVENT_START |
 				      TE_V2_NOTIF_HOST_EVENT_END |
-				      T2_V2_START_IMMEDIATELY);
+				      TE_V2_START_IMMEDIATELY);
 
 	if (!wait_for_notif) {
 		iwl_mvm_time_event_send_add(mvm, vif, te_data, &time_cmd);
@@ -777,12 +772,6 @@ int iwl_mvm_start_p2p_roc(struct iwl_mvm *mvm, struct ieee80211_vif *vif,
 		return -EBUSY;
 	}
 
-	/*
-	 * Flush the done work, just in case it's still pending, so that
-	 * the work it does can complete and we can accept new frames.
-	 */
-	flush_work(&mvm->roc_done_wk);
-
 	time_cmd.action = cpu_to_le32(FW_CTXT_ACTION_ADD);
 	time_cmd.id_and_color =
 		cpu_to_le32(FW_CMD_ID_AND_COLOR(mvmvif->id, mvmvif->color));
@@ -814,7 +803,7 @@ int iwl_mvm_start_p2p_roc(struct iwl_mvm *mvm, struct ieee80211_vif *vif,
 	time_cmd.repeat = 1;
 	time_cmd.policy = cpu_to_le16(TE_V2_NOTIF_HOST_EVENT_START |
 				      TE_V2_NOTIF_HOST_EVENT_END |
-				      T2_V2_START_IMMEDIATELY);
+				      TE_V2_START_IMMEDIATELY);
 
 	return iwl_mvm_time_event_send_add(mvm, vif, te_data, &time_cmd);
 }
@@ -924,6 +913,8 @@ int iwl_mvm_schedule_csa_period(struct iwl_mvm *mvm,
 	time_cmd.interval = cpu_to_le32(1);
 	time_cmd.policy = cpu_to_le16(TE_V2_NOTIF_HOST_EVENT_START |
 				      TE_V2_ABSENCE);
+	if (!apply_time)
+		time_cmd.policy |= cpu_to_le16(TE_V2_START_IMMEDIATELY);
 
 	return iwl_mvm_time_event_send_add(mvm, vif, te_data, &time_cmd);
 }

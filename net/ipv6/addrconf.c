@@ -186,7 +186,8 @@ static struct rt6_info *addrconf_get_prefix_route(const struct in6_addr *pfx,
 
 static void addrconf_dad_start(struct inet6_ifaddr *ifp);
 static void addrconf_dad_work(struct work_struct *w);
-static void addrconf_dad_completed(struct inet6_ifaddr *ifp, bool bump_id);
+static void addrconf_dad_completed(struct inet6_ifaddr *ifp, bool bump_id,
+				   bool send_na);
 static void addrconf_dad_run(struct inet6_dev *idev);
 static void addrconf_rs_timer(struct timer_list *t);
 static void __ipv6_ifa_notify(int event, struct inet6_ifaddr *ifa);
@@ -1458,6 +1459,21 @@ static bool ipv6_use_optimistic_addr(struct net *net,
 #endif
 }
 
+static bool ipv6_allow_optimistic_dad(struct net *net,
+				      struct inet6_dev *idev)
+{
+#ifdef CONFIG_IPV6_OPTIMISTIC_DAD
+	if (!idev)
+		return false;
+	if (!net->ipv6.devconf_all->optimistic_dad && !idev->cnf.optimistic_dad)
+		return false;
+
+	return true;
+#else
+	return false;
+#endif
+}
+
 static int ipv6_get_saddr_eval(struct net *net,
 			       struct ipv6_saddr_score *score,
 			       struct ipv6_saddr_dst *dst,
@@ -1967,6 +1983,8 @@ static void addrconf_dad_stop(struct inet6_ifaddr *ifp, int dad_failed)
 		spin_lock_bh(&ifp->lock);
 		addrconf_del_dad_work(ifp);
 		ifp->flags |= IFA_F_TENTATIVE;
+		if (dad_failed)
+			ifp->flags &= ~IFA_F_OPTIMISTIC;
 		spin_unlock_bh(&ifp->lock);
 		if (dad_failed)
 			ipv6_ifa_notify(0, ifp);
@@ -3438,6 +3456,7 @@ static int addrconf_notify(struct notifier_block *this, unsigned long event,
 		} else if (event == NETDEV_CHANGE) {
 			if (!addrconf_link_ready(dev)) {
 				/* device is still not ready. */
+				rt6_sync_down_dev(dev, event);
 				break;
 			}
 
@@ -3449,6 +3468,7 @@ static int addrconf_notify(struct notifier_block *this, unsigned long event,
 					 * multicast snooping switches
 					 */
 					ipv6_mc_up(idev);
+					rt6_sync_up(dev, RTNH_F_LINKDOWN);
 					break;
 				}
 				idev->if_flags |= IF_READY;
@@ -3483,6 +3503,9 @@ static int addrconf_notify(struct notifier_block *this, unsigned long event,
 		if (!IS_ERR_OR_NULL(idev)) {
 			if (run_pending)
 				addrconf_dad_run(idev);
+
+			/* Device has an address by now */
+			rt6_sync_up(dev, RTNH_F_DEAD);
 
 			/*
 			 * If the MTU changed during the interface down,
@@ -3577,6 +3600,7 @@ static bool addr_is_local(const struct in6_addr *addr)
 
 static int addrconf_ifdown(struct net_device *dev, int how)
 {
+	unsigned long event = how ? NETDEV_UNREGISTER : NETDEV_DOWN;
 	struct net *net = dev_net(dev);
 	struct inet6_dev *idev;
 	struct inet6_ifaddr *ifa, *tmp;
@@ -3586,8 +3610,7 @@ static int addrconf_ifdown(struct net_device *dev, int how)
 
 	ASSERT_RTNL();
 
-	rt6_ifdown(net, dev);
-	neigh_ifdown(&nd_tbl, dev);
+	rt6_disable_ip(dev, event);
 
 	idev = __in6_dev_get(dev);
 	if (!idev)
@@ -3833,12 +3856,17 @@ static void addrconf_dad_begin(struct inet6_ifaddr *ifp)
 	     idev->cnf.accept_dad < 1) ||
 	    !(ifp->flags&IFA_F_TENTATIVE) ||
 	    ifp->flags & IFA_F_NODAD) {
+		bool send_na = false;
+
+		if (ifp->flags & IFA_F_TENTATIVE &&
+		    !(ifp->flags & IFA_F_OPTIMISTIC))
+			send_na = true;
 		bump_id = ifp->flags & IFA_F_TENTATIVE;
 		ifp->flags &= ~(IFA_F_TENTATIVE|IFA_F_OPTIMISTIC|IFA_F_DADFAILED);
 		spin_unlock(&ifp->lock);
 		read_unlock_bh(&idev->lock);
 
-		addrconf_dad_completed(ifp, bump_id);
+		addrconf_dad_completed(ifp, bump_id, send_na);
 		return;
 	}
 
@@ -3967,16 +3995,21 @@ static void addrconf_dad_work(struct work_struct *w)
 	}
 
 	if (ifp->dad_probes == 0) {
+		bool send_na = false;
+
 		/*
 		 * DAD was successful
 		 */
 
+		if (ifp->flags & IFA_F_TENTATIVE &&
+		    !(ifp->flags & IFA_F_OPTIMISTIC))
+			send_na = true;
 		bump_id = ifp->flags & IFA_F_TENTATIVE;
 		ifp->flags &= ~(IFA_F_TENTATIVE|IFA_F_OPTIMISTIC|IFA_F_DADFAILED);
 		spin_unlock(&ifp->lock);
 		write_unlock_bh(&idev->lock);
 
-		addrconf_dad_completed(ifp, bump_id);
+		addrconf_dad_completed(ifp, bump_id, send_na);
 
 		goto out;
 	}
@@ -4014,7 +4047,8 @@ static bool ipv6_lonely_lladdr(struct inet6_ifaddr *ifp)
 	return true;
 }
 
-static void addrconf_dad_completed(struct inet6_ifaddr *ifp, bool bump_id)
+static void addrconf_dad_completed(struct inet6_ifaddr *ifp, bool bump_id,
+				   bool send_na)
 {
 	struct net_device *dev = ifp->idev->dev;
 	struct in6_addr lladdr;
@@ -4045,6 +4079,16 @@ static void addrconf_dad_completed(struct inet6_ifaddr *ifp, bool bump_id)
 	 */
 	if (send_mld)
 		ipv6_mc_dad_complete(ifp->idev);
+
+	/* send unsolicited NA if enabled */
+	if (send_na &&
+	    (ifp->idev->cnf.ndisc_notify ||
+	     dev_net(dev)->ipv6.devconf_all->ndisc_notify)) {
+		ndisc_send_na(dev, &in6addr_linklocal_allnodes, &ifp->addr,
+			      /*router=*/ !!ifp->idev->cnf.forwarding,
+			      /*solicited=*/ false, /*override=*/ true,
+			      /*inc_opt=*/ true);
+	}
 
 	if (send_rs) {
 		/*
@@ -4209,7 +4253,6 @@ static int if6_seq_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations if6_fops = {
-	.owner		= THIS_MODULE,
 	.open		= if6_seq_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
@@ -4231,6 +4274,7 @@ static void __net_exit if6_proc_net_exit(struct net *net)
 static struct pernet_operations if6_proc_net_ops = {
 	.init = if6_proc_net_init,
 	.exit = if6_proc_net_exit,
+	.async = true,
 };
 
 int __init if6_proc_init(void)
@@ -4352,9 +4396,11 @@ restart:
 						spin_lock(&ifpub->lock);
 						ifpub->regen_count = 0;
 						spin_unlock(&ifpub->lock);
+						rcu_read_unlock_bh();
 						ipv6_create_tempaddr(ifpub, ifp, true);
 						in6_ifa_put(ifpub);
 						in6_ifa_put(ifp);
+						rcu_read_lock_bh();
 						goto restart;
 					}
 				} else if (time_before(ifp->tstamp + ifp->prefered_lft * HZ - regen_advance * HZ, next))
@@ -4472,6 +4518,9 @@ static int inet6_addr_modify(struct inet6_ifaddr *ifp, u32 ifa_flags,
 	    (ifp->flags & IFA_F_TEMPORARY || ifp->prefix_len != 64))
 		return -EINVAL;
 
+	if (!(ifp->flags & IFA_F_TENTATIVE) || ifp->flags & IFA_F_DADFAILED)
+		ifa_flags &= ~IFA_F_OPTIMISTIC;
+
 	timeout = addrconf_timeout_fixup(valid_lft, HZ);
 	if (addrconf_finite_timeout(timeout)) {
 		expires = jiffies_to_clock_t(timeout * HZ);
@@ -4545,6 +4594,7 @@ inet6_rtm_newaddr(struct sk_buff *skb, struct nlmsghdr *nlh,
 	struct in6_addr *pfx, *peer_pfx;
 	struct inet6_ifaddr *ifa;
 	struct net_device *dev;
+	struct inet6_dev *idev;
 	u32 valid_lft = INFINITY_LIFE_TIME, preferred_lft = INFINITY_LIFE_TIME;
 	u32 ifa_flags;
 	int err;
@@ -4578,7 +4628,19 @@ inet6_rtm_newaddr(struct sk_buff *skb, struct nlmsghdr *nlh,
 
 	/* We ignore other flags so far. */
 	ifa_flags &= IFA_F_NODAD | IFA_F_HOMEADDRESS | IFA_F_MANAGETEMPADDR |
-		     IFA_F_NOPREFIXROUTE | IFA_F_MCAUTOJOIN;
+		     IFA_F_NOPREFIXROUTE | IFA_F_MCAUTOJOIN | IFA_F_OPTIMISTIC;
+
+	idev = ipv6_find_idev(dev);
+	if (IS_ERR(idev))
+		return PTR_ERR(idev);
+
+	if (!ipv6_allow_optimistic_dad(net, idev))
+		ifa_flags &= ~IFA_F_OPTIMISTIC;
+
+	if (ifa_flags & IFA_F_NODAD && ifa_flags & IFA_F_OPTIMISTIC) {
+		NL_SET_ERR_MSG(extack, "IFA_F_NODAD and IFA_F_OPTIMISTIC are mutually exclusive");
+		return -EINVAL;
+	}
 
 	ifa = ipv6_get_ifaddr(net, pfx, dev, 1);
 	if (!ifa) {
@@ -6522,6 +6584,7 @@ static void __net_exit addrconf_exit_net(struct net *net)
 static struct pernet_operations addrconf_ops = {
 	.init = addrconf_init_net,
 	.exit = addrconf_exit_net,
+	.async = true,
 };
 
 static struct rtnl_af_ops inet6_ops __read_mostly = {
@@ -6595,27 +6658,45 @@ int __init addrconf_init(void)
 
 	rtnl_af_register(&inet6_ops);
 
-	err = __rtnl_register(PF_INET6, RTM_GETLINK, NULL, inet6_dump_ifinfo,
-			      0);
+	err = rtnl_register_module(THIS_MODULE, PF_INET6, RTM_GETLINK,
+				   NULL, inet6_dump_ifinfo, 0);
 	if (err < 0)
 		goto errout;
 
-	/* Only the first call to __rtnl_register can fail */
-	__rtnl_register(PF_INET6, RTM_NEWADDR, inet6_rtm_newaddr, NULL, 0);
-	__rtnl_register(PF_INET6, RTM_DELADDR, inet6_rtm_deladdr, NULL, 0);
-	__rtnl_register(PF_INET6, RTM_GETADDR, inet6_rtm_getaddr,
-			inet6_dump_ifaddr, RTNL_FLAG_DOIT_UNLOCKED);
-	__rtnl_register(PF_INET6, RTM_GETMULTICAST, NULL,
-			inet6_dump_ifmcaddr, 0);
-	__rtnl_register(PF_INET6, RTM_GETANYCAST, NULL,
-			inet6_dump_ifacaddr, 0);
-	__rtnl_register(PF_INET6, RTM_GETNETCONF, inet6_netconf_get_devconf,
-			inet6_netconf_dump_devconf, RTNL_FLAG_DOIT_UNLOCKED);
-
-	ipv6_addr_label_rtnl_register();
+	err = rtnl_register_module(THIS_MODULE, PF_INET6, RTM_NEWADDR,
+				   inet6_rtm_newaddr, NULL, 0);
+	if (err < 0)
+		goto errout;
+	err = rtnl_register_module(THIS_MODULE, PF_INET6, RTM_DELADDR,
+				   inet6_rtm_deladdr, NULL, 0);
+	if (err < 0)
+		goto errout;
+	err = rtnl_register_module(THIS_MODULE, PF_INET6, RTM_GETADDR,
+				   inet6_rtm_getaddr, inet6_dump_ifaddr,
+				   RTNL_FLAG_DOIT_UNLOCKED);
+	if (err < 0)
+		goto errout;
+	err = rtnl_register_module(THIS_MODULE, PF_INET6, RTM_GETMULTICAST,
+				   NULL, inet6_dump_ifmcaddr, 0);
+	if (err < 0)
+		goto errout;
+	err = rtnl_register_module(THIS_MODULE, PF_INET6, RTM_GETANYCAST,
+				   NULL, inet6_dump_ifacaddr, 0);
+	if (err < 0)
+		goto errout;
+	err = rtnl_register_module(THIS_MODULE, PF_INET6, RTM_GETNETCONF,
+				   inet6_netconf_get_devconf,
+				   inet6_netconf_dump_devconf,
+				   RTNL_FLAG_DOIT_UNLOCKED);
+	if (err < 0)
+		goto errout;
+	err = ipv6_addr_label_rtnl_register();
+	if (err < 0)
+		goto errout;
 
 	return 0;
 errout:
+	rtnl_unregister_all(PF_INET6);
 	rtnl_af_unregister(&inet6_ops);
 	unregister_netdevice_notifier(&ipv6_dev_notf);
 errlo:

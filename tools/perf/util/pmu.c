@@ -12,6 +12,7 @@
 #include <dirent.h>
 #include <api/fs/fs.h>
 #include <locale.h>
+#include <regex.h>
 #include "util.h"
 #include "pmu.h"
 #include "parse-events.h"
@@ -537,17 +538,73 @@ static bool pmu_is_uncore(const char *name)
 }
 
 /*
+ *  PMU CORE devices have different name other than cpu in sysfs on some
+ *  platforms. looking for possible sysfs files to identify as core device.
+ */
+static int is_pmu_core(const char *name)
+{
+	struct stat st;
+	char path[PATH_MAX];
+	const char *sysfs = sysfs__mountpoint();
+
+	if (!sysfs)
+		return 0;
+
+	/* Look for cpu sysfs (x86 and others) */
+	scnprintf(path, PATH_MAX, "%s/bus/event_source/devices/cpu", sysfs);
+	if ((stat(path, &st) == 0) &&
+			(strncmp(name, "cpu", strlen("cpu")) == 0))
+		return 1;
+
+	/* Look for cpu sysfs (specific to arm) */
+	scnprintf(path, PATH_MAX, "%s/bus/event_source/devices/%s/cpus",
+				sysfs, name);
+	if (stat(path, &st) == 0)
+		return 1;
+
+	return 0;
+}
+
+/*
  * Return the CPU id as a raw string.
  *
  * Each architecture should provide a more precise id string that
  * can be use to match the architecture's "mapfile".
  */
-char * __weak get_cpuid_str(void)
+char * __weak get_cpuid_str(struct perf_pmu *pmu __maybe_unused)
 {
 	return NULL;
 }
 
-static char *perf_pmu__getcpuid(void)
+/* Return zero when the cpuid from the mapfile.csv matches the
+ * cpuid string generated on this platform.
+ * Otherwise return non-zero.
+ */
+int __weak strcmp_cpuid_str(const char *mapcpuid, const char *cpuid)
+{
+	regex_t re;
+	regmatch_t pmatch[1];
+	int match;
+
+	if (regcomp(&re, mapcpuid, REG_EXTENDED) != 0) {
+		/* Warn unable to generate match particular string. */
+		pr_info("Invalid regular expression %s\n", mapcpuid);
+		return 1;
+	}
+
+	match = !regexec(&re, cpuid, 1, pmatch, 0);
+	regfree(&re);
+	if (match) {
+		size_t match_len = (pmatch[0].rm_eo - pmatch[0].rm_so);
+
+		/* Verify the entire string matched. */
+		if (match_len == strlen(cpuid))
+			return 0;
+	}
+	return 1;
+}
+
+static char *perf_pmu__getcpuid(struct perf_pmu *pmu)
 {
 	char *cpuid;
 	static bool printed;
@@ -556,7 +613,7 @@ static char *perf_pmu__getcpuid(void)
 	if (cpuid)
 		cpuid = strdup(cpuid);
 	if (!cpuid)
-		cpuid = get_cpuid_str();
+		cpuid = get_cpuid_str(pmu);
 	if (!cpuid)
 		return NULL;
 
@@ -567,11 +624,17 @@ static char *perf_pmu__getcpuid(void)
 	return cpuid;
 }
 
-struct pmu_events_map *perf_pmu__find_map(void)
+struct pmu_events_map *perf_pmu__find_map(struct perf_pmu *pmu)
 {
 	struct pmu_events_map *map;
-	char *cpuid = perf_pmu__getcpuid();
+	char *cpuid = perf_pmu__getcpuid(pmu);
 	int i;
+
+	/* on some platforms which uses cpus map, cpuid can be NULL for
+	 * PMUs other than CORE PMUs.
+	 */
+	if (!cpuid)
+		return NULL;
 
 	i = 0;
 	for (;;) {
@@ -581,7 +644,7 @@ struct pmu_events_map *perf_pmu__find_map(void)
 			break;
 		}
 
-		if (!strcmp(map->cpuid, cpuid))
+		if (!strcmp_cpuid_str(map->cpuid, cpuid))
 			break;
 	}
 	free(cpuid);
@@ -593,13 +656,14 @@ struct pmu_events_map *perf_pmu__find_map(void)
  * to the current running CPU. Then, add all PMU events from that table
  * as aliases.
  */
-static void pmu_add_cpu_aliases(struct list_head *head, const char *name)
+static void pmu_add_cpu_aliases(struct list_head *head, struct perf_pmu *pmu)
 {
 	int i;
 	struct pmu_events_map *map;
 	struct pmu_event *pe;
+	const char *name = pmu->name;
 
-	map = perf_pmu__find_map();
+	map = perf_pmu__find_map(pmu);
 	if (!map)
 		return;
 
@@ -608,7 +672,6 @@ static void pmu_add_cpu_aliases(struct list_head *head, const char *name)
 	 */
 	i = 0;
 	while (1) {
-		const char *pname;
 
 		pe = &map->table[i++];
 		if (!pe->name) {
@@ -617,9 +680,13 @@ static void pmu_add_cpu_aliases(struct list_head *head, const char *name)
 			break;
 		}
 
-		pname = pe->pmu ? pe->pmu : "cpu";
-		if (strncmp(pname, name, strlen(pname)))
-			continue;
+		if (!is_pmu_core(name)) {
+			/* check for uncore devices */
+			if (pe->pmu == NULL)
+				continue;
+			if (strncmp(pe->pmu, name, strlen(pe->pmu)))
+				continue;
+		}
 
 		/* need type casts to override 'const' */
 		__perf_pmu__new_alias(head, NULL, (char *)pe->name,
@@ -661,21 +728,20 @@ static struct perf_pmu *pmu_lookup(const char *name)
 	if (pmu_aliases(name, &aliases))
 		return NULL;
 
-	pmu_add_cpu_aliases(&aliases, name);
 	pmu = zalloc(sizeof(*pmu));
 	if (!pmu)
 		return NULL;
 
 	pmu->cpus = pmu_cpumask(name);
-
+	pmu->name = strdup(name);
+	pmu->type = type;
 	pmu->is_uncore = pmu_is_uncore(name);
+	pmu_add_cpu_aliases(&aliases, pmu);
 
 	INIT_LIST_HEAD(&pmu->format);
 	INIT_LIST_HEAD(&pmu->aliases);
 	list_splice(&format, &pmu->format);
 	list_splice(&aliases, &pmu->aliases);
-	pmu->name = strdup(name);
-	pmu->type = type;
 	list_add_tail(&pmu->list, &pmus);
 
 	pmu->default_config = perf_pmu__get_default_config(pmu);

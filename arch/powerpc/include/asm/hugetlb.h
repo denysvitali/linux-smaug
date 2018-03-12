@@ -47,8 +47,7 @@ static inline pte_t *hugepd_page(hugepd_t hpd)
 {
 	BUG_ON(!hugepd_ok(hpd));
 #ifdef CONFIG_PPC_8xx
-	return (pte_t *)__va(hpd_val(hpd) &
-			     ~(_PMD_PAGE_MASK | _PMD_PRESENT_MASK));
+	return (pte_t *)__va(hpd_val(hpd) & ~HUGEPD_SHIFT_MASK);
 #else
 	return (pte_t *)((hpd_val(hpd) &
 			  ~HUGEPD_SHIFT_MASK) | PD_HUGE);
@@ -117,12 +116,6 @@ void flush_hugetlb_page(struct vm_area_struct *vma, unsigned long vmaddr);
 void hugetlb_free_pgd_range(struct mmu_gather *tlb, unsigned long addr,
 			    unsigned long end, unsigned long floor,
 			    unsigned long ceiling);
-
-/*
- * The version of vma_mmu_pagesize() in arch/powerpc/mm/hugetlbpage.c needs
- * to override the version in mm/hugetlb.c
- */
-#define vma_mmu_pagesize vma_mmu_pagesize
 
 /*
  * If the arch doesn't supply something else, assume that hugepage

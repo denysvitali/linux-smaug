@@ -680,6 +680,7 @@ struct css_set init_css_set = {
 	 */
 	.dfl_cgrp		= &cgrp_dfl_root.cgrp,
 };
+EXPORT_SYMBOL_GPL(init_css_set);
 
 static int css_set_count	= 1;	/* 1 for init_css_set */
 
@@ -1397,7 +1398,7 @@ static char *cgroup_file_name(struct cgroup *cgrp, const struct cftype *cft,
 			 cgroup_on_dfl(cgrp) ? ss->name : ss->legacy_name,
 			 cft->name);
 	else
-		strlcpy(buf, cft->name, CGROUP_FILE_NAME_MAX);
+		strscpy(buf, cft->name, CGROUP_FILE_NAME_MAX);
 	return buf;
 }
 
@@ -1731,6 +1732,9 @@ static int parse_cgroup_root_flags(char *data, unsigned int *root_flags)
 		if (!strcmp(token, "nsdelegate")) {
 			*root_flags |= CGRP_ROOT_NS_DELEGATE;
 			continue;
+		} else if (!strcmp(token, "groupoom")) {
+			*root_flags |= CGRP_GROUP_OOM;
+			continue;
 		}
 
 		pr_err("cgroup2: unknown option \"%s\"\n", token);
@@ -1747,6 +1751,11 @@ static void apply_cgroup_root_flags(unsigned int root_flags)
 			cgrp_dfl_root.flags |= CGRP_ROOT_NS_DELEGATE;
 		else
 			cgrp_dfl_root.flags &= ~CGRP_ROOT_NS_DELEGATE;
+
+		if (root_flags & CGRP_GROUP_OOM)
+			cgrp_dfl_root.flags |= CGRP_GROUP_OOM;
+		else
+			cgrp_dfl_root.flags &= ~CGRP_GROUP_OOM;
 	}
 }
 
@@ -1754,6 +1763,8 @@ static int cgroup_show_options(struct seq_file *seq, struct kernfs_root *kf_root
 {
 	if (cgrp_dfl_root.flags & CGRP_ROOT_NS_DELEGATE)
 		seq_puts(seq, ",nsdelegate");
+	if (cgrp_dfl_root.flags & CGRP_GROUP_OOM)
+		seq_puts(seq, ",groupoom");
 	return 0;
 }
 
@@ -1864,9 +1875,9 @@ void init_cgroup_root(struct cgroup_root *root, struct cgroup_sb_opts *opts)
 
 	root->flags = opts->flags;
 	if (opts->release_agent)
-		strlcpy(root->release_agent_path, opts->release_agent, PATH_MAX);
+		strscpy(root->release_agent_path, opts->release_agent, PATH_MAX);
 	if (opts->name)
-		strlcpy(root->name, opts->name, MAX_CGROUP_ROOT_NAMELEN);
+		strscpy(root->name, opts->name, MAX_CGROUP_ROOT_NAMELEN);
 	if (opts->cpuset_clone_children)
 		set_bit(CGRP_CPUSET_CLONE_CHILDREN, &root->cgrp.flags);
 }
@@ -3182,6 +3193,16 @@ static int cgroup_enable_threaded(struct cgroup *cgrp)
 	/* noop if already threaded */
 	if (cgroup_is_threaded(cgrp))
 		return 0;
+
+	/*
+	 * If @cgroup is populated or has domain controllers enabled, it
+	 * can't be switched.  While the below cgroup_can_be_thread_root()
+	 * test can catch the same conditions, that's only when @parent is
+	 * not mixable, so let's check it explicitly.
+	 */
+	if (cgroup_is_populated(cgrp) ||
+	    cgrp->subtree_control & ~cgrp_dfl_threaded_ss_mask)
+		return -EOPNOTSUPP;
 
 	/* we're joining the parent's domain, ensure its validity */
 	if (!cgroup_is_valid_domain(dom_cgrp) ||
@@ -5911,7 +5932,8 @@ static struct kobj_attribute cgroup_delegate_attr = __ATTR_RO(delegate);
 static ssize_t features_show(struct kobject *kobj, struct kobj_attribute *attr,
 			     char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "nsdelegate\n");
+	return snprintf(buf, PAGE_SIZE, "nsdelegate\n"
+					"groupoom\n");
 }
 static struct kobj_attribute cgroup_features_attr = __ATTR_RO(features);
 

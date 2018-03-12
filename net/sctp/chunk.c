@@ -124,7 +124,7 @@ static void sctp_datamsg_destroy(struct sctp_datamsg *msg)
 			ev = sctp_ulpevent_make_send_failed(asoc, chunk, sent,
 							    error, GFP_ATOMIC);
 			if (ev)
-				sctp_ulpq_tail_event(&asoc->ulpq, ev);
+				asoc->stream.si->enqueue_event(&asoc->ulpq, ev);
 		}
 
 		sctp_chunk_put(chunk);
@@ -171,6 +171,8 @@ struct sctp_datamsg *sctp_datamsg_from_user(struct sctp_association *asoc,
 	struct list_head *pos, *temp;
 	struct sctp_chunk *chunk;
 	struct sctp_datamsg *msg;
+	struct sctp_sock *sp;
+	struct sctp_af *af;
 	int err;
 
 	msg = sctp_datamsg_new(GFP_KERNEL);
@@ -189,9 +191,11 @@ struct sctp_datamsg *sctp_datamsg_from_user(struct sctp_association *asoc,
 	/* This is the biggest possible DATA chunk that can fit into
 	 * the packet
 	 */
-	max_data = asoc->pathmtu -
-		   sctp_sk(asoc->base.sk)->pf->af->net_header_len -
-		   sizeof(struct sctphdr) - sizeof(struct sctp_data_chunk);
+	sp = sctp_sk(asoc->base.sk);
+	af = sp->pf->af;
+	max_data = asoc->pathmtu - af->net_header_len -
+		   sizeof(struct sctphdr) - sctp_datachk_len(&asoc->stream) -
+		   af->ip_options_len(asoc->base.sk);
 	max_data = SCTP_TRUNC4(max_data);
 
 	/* If the the peer requested that we authenticate DATA chunks
@@ -264,8 +268,8 @@ struct sctp_datamsg *sctp_datamsg_from_user(struct sctp_association *asoc,
 				frag |= SCTP_DATA_SACK_IMM;
 		}
 
-		chunk = sctp_make_datafrag_empty(asoc, sinfo, len, frag,
-						 0, GFP_KERNEL);
+		chunk = asoc->stream.si->make_datafrag(asoc, sinfo, len, frag,
+						       GFP_KERNEL);
 		if (!chunk) {
 			err = -ENOMEM;
 			goto errout;

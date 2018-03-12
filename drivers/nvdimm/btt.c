@@ -753,6 +753,7 @@ static struct arena_info *alloc_arena(struct btt *btt, size_t size,
 		return NULL;
 	arena->nd_btt = btt->nd_btt;
 	arena->sector_size = btt->sector_size;
+	mutex_init(&arena->err_lock);
 
 	if (!size)
 		return arena;
@@ -891,7 +892,6 @@ static int discover_arenas(struct btt *btt)
 			goto out;
 		}
 
-		mutex_init(&arena->err_lock);
 		ret = btt_freelist_init(arena);
 		if (ret)
 			goto out;
@@ -1542,7 +1542,7 @@ static int btt_blk_init(struct btt *btt)
 	blk_queue_make_request(btt->btt_queue, btt_make_request);
 	blk_queue_logical_block_size(btt->btt_queue, btt->sector_size);
 	blk_queue_max_hw_sectors(btt->btt_queue, UINT_MAX);
-	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, btt->btt_queue);
+	blk_queue_flag_set(QUEUE_FLAG_NONROT, btt->btt_queue);
 	btt->btt_queue->queuedata = btt;
 
 	set_capacity(btt->btt_disk, 0);

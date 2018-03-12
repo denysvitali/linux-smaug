@@ -175,6 +175,14 @@ static bool trap_raz_wi(struct kvm_vcpu *vcpu,
 		return read_zero(vcpu, p);
 }
 
+static bool trap_undef(struct kvm_vcpu *vcpu,
+		       struct sys_reg_params *p,
+		       const struct sys_reg_desc *r)
+{
+	kvm_inject_undefined(vcpu);
+	return false;
+}
+
 static bool trap_oslsr_el1(struct kvm_vcpu *vcpu,
 			   struct sys_reg_params *p,
 			   const struct sys_reg_desc *r)
@@ -893,6 +901,12 @@ static u64 read_id_reg(struct sys_reg_desc const *r, bool raz)
 				    task_pid_nr(current));
 
 		val &= ~(0xfUL << ID_AA64PFR0_SVE_SHIFT);
+	} else if (id == SYS_ID_AA64MMFR1_EL1) {
+		if (val & (0xfUL << ID_AA64MMFR1_LOR_SHIFT))
+			pr_err_once("kvm [%i]: LORegions unsupported for guests, suppressing\n",
+				    task_pid_nr(current));
+
+		val &= ~(0xfUL << ID_AA64MMFR1_LOR_SHIFT);
 	}
 
 	return val;
@@ -1159,6 +1173,16 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	{ SYS_DESC(SYS_AFSR0_EL1), access_vm_reg, reset_unknown, AFSR0_EL1 },
 	{ SYS_DESC(SYS_AFSR1_EL1), access_vm_reg, reset_unknown, AFSR1_EL1 },
 	{ SYS_DESC(SYS_ESR_EL1), access_vm_reg, reset_unknown, ESR_EL1 },
+
+	{ SYS_DESC(SYS_ERRIDR_EL1), trap_raz_wi },
+	{ SYS_DESC(SYS_ERRSELR_EL1), trap_raz_wi },
+	{ SYS_DESC(SYS_ERXFR_EL1), trap_raz_wi },
+	{ SYS_DESC(SYS_ERXCTLR_EL1), trap_raz_wi },
+	{ SYS_DESC(SYS_ERXSTATUS_EL1), trap_raz_wi },
+	{ SYS_DESC(SYS_ERXADDR_EL1), trap_raz_wi },
+	{ SYS_DESC(SYS_ERXMISC0_EL1), trap_raz_wi },
+	{ SYS_DESC(SYS_ERXMISC1_EL1), trap_raz_wi },
+
 	{ SYS_DESC(SYS_FAR_EL1), access_vm_reg, reset_unknown, FAR_EL1 },
 	{ SYS_DESC(SYS_PAR_EL1), NULL, reset_unknown, PAR_EL1 },
 
@@ -1168,7 +1192,14 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	{ SYS_DESC(SYS_MAIR_EL1), access_vm_reg, reset_unknown, MAIR_EL1 },
 	{ SYS_DESC(SYS_AMAIR_EL1), access_vm_reg, reset_amair_el1, AMAIR_EL1 },
 
+	{ SYS_DESC(SYS_LORSA_EL1), trap_undef },
+	{ SYS_DESC(SYS_LOREA_EL1), trap_undef },
+	{ SYS_DESC(SYS_LORN_EL1), trap_undef },
+	{ SYS_DESC(SYS_LORC_EL1), trap_undef },
+	{ SYS_DESC(SYS_LORID_EL1), trap_undef },
+
 	{ SYS_DESC(SYS_VBAR_EL1), NULL, reset_val, VBAR_EL1, 0 },
+	{ SYS_DESC(SYS_DISR_EL1), NULL, reset_val, DISR_EL1, 0 },
 
 	{ SYS_DESC(SYS_ICC_IAR0_EL1), write_to_read_only },
 	{ SYS_DESC(SYS_ICC_EOIR0_EL1), read_from_write_only },
@@ -1534,6 +1565,11 @@ static const struct sys_reg_desc cp15_regs[] = {
 
 	{ Op1( 0), CRn(13), CRm( 0), Op2( 1), access_vm_reg, NULL, c13_CID },
 
+	/* CNTP_TVAL */
+	{ Op1( 0), CRn(14), CRm( 2), Op2( 0), access_cntp_tval },
+	/* CNTP_CTL */
+	{ Op1( 0), CRn(14), CRm( 2), Op2( 1), access_cntp_ctl },
+
 	/* PMEVCNTRn */
 	PMU_PMEVCNTR(0),
 	PMU_PMEVCNTR(1),
@@ -1607,6 +1643,7 @@ static const struct sys_reg_desc cp15_64_regs[] = {
 	{ Op1( 0), CRn( 0), CRm( 9), Op2( 0), access_pmu_evcntr },
 	{ Op1( 0), CRn( 0), CRm(12), Op2( 0), access_gic_sgi },
 	{ Op1( 1), CRn( 0), CRm( 2), Op2( 0), access_vm_reg, NULL, c2_TTBR1 },
+	{ Op1( 2), CRn( 0), CRm(14), Op2( 0), access_cntp_cval },
 };
 
 /* Target specific emulation tables */

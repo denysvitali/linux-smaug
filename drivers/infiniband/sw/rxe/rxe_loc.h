@@ -38,14 +38,12 @@
 
 int rxe_av_chk_attr(struct rxe_dev *rxe, struct rdma_ah_attr *attr);
 
-int rxe_av_from_attr(struct rxe_dev *rxe, u8 port_num,
-		     struct rxe_av *av, struct rdma_ah_attr *attr);
+void rxe_av_from_attr(u8 port_num, struct rxe_av *av,
+		     struct rdma_ah_attr *attr);
 
-int rxe_av_to_attr(struct rxe_dev *rxe, struct rxe_av *av,
-		   struct rdma_ah_attr *attr);
+void rxe_av_to_attr(struct rxe_av *av, struct rdma_ah_attr *attr);
 
-int rxe_av_fill_ip_info(struct rxe_dev *rxe,
-			struct rxe_av *av,
+void rxe_av_fill_ip_info(struct rxe_av *av,
 			struct rdma_ah_attr *attr,
 			struct ib_gid_attr *sgid_attr,
 			union ib_gid *sgid);
@@ -145,8 +143,7 @@ int advance_dma_data(struct rxe_dma_info *dma, unsigned int length);
 
 /* rxe_net.c */
 int rxe_loopback(struct sk_buff *skb);
-int rxe_send(struct rxe_dev *rxe, struct rxe_pkt_info *pkt,
-	     struct sk_buff *skb);
+int rxe_send(struct rxe_pkt_info *pkt, struct sk_buff *skb);
 struct sk_buff *rxe_init_packet(struct rxe_dev *rxe, struct rxe_av *av,
 				int paylen, struct rxe_pkt_info *pkt);
 int rxe_prepare(struct rxe_dev *rxe, struct rxe_pkt_info *pkt,
@@ -237,7 +234,6 @@ int rxe_srq_from_attr(struct rxe_dev *rxe, struct rxe_srq *srq,
 
 void rxe_release(struct kref *kref);
 
-void rxe_drain_req_pkts(struct rxe_qp *qp, bool notify);
 int rxe_completer(void *arg);
 int rxe_requester(void *arg);
 int rxe_responder(void *arg);
@@ -271,7 +267,7 @@ static inline int rxe_xmit_packet(struct rxe_dev *rxe, struct rxe_qp *qp,
 		memcpy(SKB_TO_PKT(skb), pkt, sizeof(*pkt));
 		err = rxe_loopback(skb);
 	} else {
-		err = rxe_send(rxe, pkt, skb);
+		err = rxe_send(pkt, skb);
 	}
 
 	if (err) {

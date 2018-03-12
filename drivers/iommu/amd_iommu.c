@@ -527,7 +527,8 @@ static void amd_iommu_report_page_fault(u16 devid, u16 domain_id,
 	struct iommu_dev_data *dev_data = NULL;
 	struct pci_dev *pdev;
 
-	pdev = pci_get_bus_and_slot(PCI_BUS_NUM(devid), devid & 0xff);
+	pdev = pci_get_domain_bus_and_slot(0, PCI_BUS_NUM(devid),
+					   devid & 0xff);
 	if (pdev)
 		dev_data = get_dev_data(&pdev->dev);
 
@@ -616,7 +617,9 @@ retry:
 		       address, flags);
 		break;
 	default:
-		printk(KERN_ERR "UNKNOWN type=0x%02x]\n", type);
+		printk(KERN_ERR "UNKNOWN type=0x%02x event[0]=0x%08x "
+		       "event[1]=0x%08x event[2]=0x%08x event[3]=0x%08x\n",
+		       type, event[0], event[1], event[2], event[3]);
 	}
 
 	memset(__evt, 0, 4 * sizeof(u32));
@@ -1053,9 +1056,9 @@ static int iommu_queue_command_sync(struct amd_iommu *iommu,
 	unsigned long flags;
 	int ret;
 
-	spin_lock_irqsave(&iommu->lock, flags);
+	raw_spin_lock_irqsave(&iommu->lock, flags);
 	ret = __iommu_queue_command_sync(iommu, cmd, sync);
-	spin_unlock_irqrestore(&iommu->lock, flags);
+	raw_spin_unlock_irqrestore(&iommu->lock, flags);
 
 	return ret;
 }
@@ -1081,7 +1084,7 @@ static int iommu_completion_wait(struct amd_iommu *iommu)
 
 	build_completion_wait(&cmd, (u64)&iommu->cmd_sem);
 
-	spin_lock_irqsave(&iommu->lock, flags);
+	raw_spin_lock_irqsave(&iommu->lock, flags);
 
 	iommu->cmd_sem = 0;
 
@@ -1092,7 +1095,7 @@ static int iommu_completion_wait(struct amd_iommu *iommu)
 	ret = wait_on_sem(&iommu->cmd_sem);
 
 out_unlock:
-	spin_unlock_irqrestore(&iommu->lock, flags);
+	raw_spin_unlock_irqrestore(&iommu->lock, flags);
 
 	return ret;
 }
@@ -1815,7 +1818,8 @@ static bool dma_ops_domain(struct protection_domain *domain)
 	return domain->flags & PD_DMA_OPS_MASK;
 }
 
-static void set_dte_entry(u16 devid, struct protection_domain *domain, bool ats)
+static void set_dte_entry(u16 devid, struct protection_domain *domain,
+			  bool ats, bool ppr)
 {
 	u64 pte_root = 0;
 	u64 flags = 0;
@@ -1831,6 +1835,13 @@ static void set_dte_entry(u16 devid, struct protection_domain *domain, bool ats)
 
 	if (ats)
 		flags |= DTE_FLAG_IOTLB;
+
+	if (ppr) {
+		struct amd_iommu *iommu = amd_iommu_rlookup_table[devid];
+
+		if (iommu_feature(iommu, FEATURE_EPHSUP))
+			pte_root |= 1ULL << DEV_ENTRY_PPR;
+	}
 
 	if (domain->flags & PD_IOMMUV2_MASK) {
 		u64 gcr3 = iommu_virt_to_phys(domain->gcr3_tbl);
@@ -1894,9 +1905,9 @@ static void do_attach(struct iommu_dev_data *dev_data,
 	domain->dev_cnt                 += 1;
 
 	/* Update device table */
-	set_dte_entry(dev_data->devid, domain, ats);
+	set_dte_entry(dev_data->devid, domain, ats, dev_data->iommu_v2);
 	if (alias != dev_data->devid)
-		set_dte_entry(alias, domain, ats);
+		set_dte_entry(alias, domain, ats, dev_data->iommu_v2);
 
 	device_flush_dte(dev_data);
 }
@@ -2275,13 +2286,15 @@ static void update_device_table(struct protection_domain *domain)
 	struct iommu_dev_data *dev_data;
 
 	list_for_each_entry(dev_data, &domain->dev_list, list) {
-		set_dte_entry(dev_data->devid, domain, dev_data->ats.enabled);
+		set_dte_entry(dev_data->devid, domain, dev_data->ats.enabled,
+			      dev_data->iommu_v2);
 
 		if (dev_data->devid == dev_data->alias)
 			continue;
 
 		/* There is an alias, update device table entry for it */
-		set_dte_entry(dev_data->alias, domain, dev_data->ats.enabled);
+		set_dte_entry(dev_data->alias, domain, dev_data->ats.enabled,
+			      dev_data->iommu_v2);
 	}
 }
 
@@ -3037,7 +3050,7 @@ static size_t amd_iommu_unmap(struct iommu_domain *dom, unsigned long iova,
 	size_t unmap_size;
 
 	if (domain->mode == PAGE_MODE_NONE)
-		return -EINVAL;
+		return 0;
 
 	mutex_lock(&domain->api_lock);
 	unmap_size = iommu_unmap_page(domain, iova, page_size);
@@ -3582,7 +3595,22 @@ static void set_dte_irq_entry(u16 devid, struct irq_remap_table *table)
 	amd_iommu_dev_table[devid].data[2] = dte;
 }
 
-static struct irq_remap_table *get_irq_table(u16 devid, bool ioapic)
+static struct irq_remap_table *get_irq_table(u16 devid)
+{
+	struct irq_remap_table *table;
+
+	if (WARN_ONCE(!amd_iommu_rlookup_table[devid],
+		      "%s: no iommu for devid %x\n", __func__, devid))
+		return NULL;
+
+	table = irq_lookup_table[devid];
+	if (WARN_ONCE(!table, "%s: no table for devid %x\n", __func__, devid))
+		return NULL;
+
+	return table;
+}
+
+static struct irq_remap_table *alloc_irq_table(u16 devid, bool ioapic)
 {
 	struct irq_remap_table *table = NULL;
 	struct amd_iommu *iommu;
@@ -3614,7 +3642,7 @@ static struct irq_remap_table *get_irq_table(u16 devid, bool ioapic)
 		goto out_unlock;
 
 	/* Initialize table spin-lock */
-	spin_lock_init(&table->lock);
+	raw_spin_lock_init(&table->lock);
 
 	if (ioapic)
 		/* Keep the first 32 indexes free for IOAPIC interrupts */
@@ -3669,14 +3697,14 @@ static int alloc_irq_index(u16 devid, int count, bool align)
 	if (!iommu)
 		return -ENODEV;
 
-	table = get_irq_table(devid, false);
+	table = alloc_irq_table(devid, false);
 	if (!table)
 		return -ENODEV;
 
 	if (align)
 		alignment = roundup_pow_of_two(count);
 
-	spin_lock_irqsave(&table->lock, flags);
+	raw_spin_lock_irqsave(&table->lock, flags);
 
 	/* Scan table for free entries */
 	for (index = ALIGN(table->min_index, alignment), c = 0;
@@ -3703,7 +3731,7 @@ static int alloc_irq_index(u16 devid, int count, bool align)
 	index = -ENOSPC;
 
 out:
-	spin_unlock_irqrestore(&table->lock, flags);
+	raw_spin_unlock_irqrestore(&table->lock, flags);
 
 	return index;
 }
@@ -3720,11 +3748,11 @@ static int modify_irte_ga(u16 devid, int index, struct irte_ga *irte,
 	if (iommu == NULL)
 		return -EINVAL;
 
-	table = get_irq_table(devid, false);
+	table = get_irq_table(devid);
 	if (!table)
 		return -ENOMEM;
 
-	spin_lock_irqsave(&table->lock, flags);
+	raw_spin_lock_irqsave(&table->lock, flags);
 
 	entry = (struct irte_ga *)table->table;
 	entry = &entry[index];
@@ -3735,7 +3763,7 @@ static int modify_irte_ga(u16 devid, int index, struct irte_ga *irte,
 	if (data)
 		data->ref = entry;
 
-	spin_unlock_irqrestore(&table->lock, flags);
+	raw_spin_unlock_irqrestore(&table->lock, flags);
 
 	iommu_flush_irt(iommu, devid);
 	iommu_completion_wait(iommu);
@@ -3753,13 +3781,13 @@ static int modify_irte(u16 devid, int index, union irte *irte)
 	if (iommu == NULL)
 		return -EINVAL;
 
-	table = get_irq_table(devid, false);
+	table = get_irq_table(devid);
 	if (!table)
 		return -ENOMEM;
 
-	spin_lock_irqsave(&table->lock, flags);
+	raw_spin_lock_irqsave(&table->lock, flags);
 	table->table[index] = irte->val;
-	spin_unlock_irqrestore(&table->lock, flags);
+	raw_spin_unlock_irqrestore(&table->lock, flags);
 
 	iommu_flush_irt(iommu, devid);
 	iommu_completion_wait(iommu);
@@ -3777,13 +3805,13 @@ static void free_irte(u16 devid, int index)
 	if (iommu == NULL)
 		return;
 
-	table = get_irq_table(devid, false);
+	table = get_irq_table(devid);
 	if (!table)
 		return;
 
-	spin_lock_irqsave(&table->lock, flags);
+	raw_spin_lock_irqsave(&table->lock, flags);
 	iommu->irte_ops->clear_allocated(table, index);
-	spin_unlock_irqrestore(&table->lock, flags);
+	raw_spin_unlock_irqrestore(&table->lock, flags);
 
 	iommu_flush_irt(iommu, devid);
 	iommu_completion_wait(iommu);
@@ -3864,10 +3892,8 @@ static void irte_ga_set_affinity(void *entry, u16 devid, u16 index,
 				 u8 vector, u32 dest_apicid)
 {
 	struct irte_ga *irte = (struct irte_ga *) entry;
-	struct iommu_dev_data *dev_data = search_dev_data(devid);
 
-	if (!dev_data || !dev_data->use_vapic ||
-	    !irte->lo.fields_remap.guest_mode) {
+	if (!irte->lo.fields_remap.guest_mode) {
 		irte->hi.fields.vector = vector;
 		irte->lo.fields_remap.destination = dest_apicid;
 		modify_irte_ga(devid, index, irte, NULL);
@@ -4097,7 +4123,7 @@ static int irq_remapping_alloc(struct irq_domain *domain, unsigned int virq,
 		return ret;
 
 	if (info->type == X86_IRQ_ALLOC_TYPE_IOAPIC) {
-		if (get_irq_table(devid, true))
+		if (alloc_irq_table(devid, true))
 			index = info->ioapic_pin;
 		else
 			ret = -ENOMEM;
@@ -4380,11 +4406,11 @@ int amd_iommu_update_ga(int cpu, bool is_run, void *data)
 	if (!iommu)
 		return -ENODEV;
 
-	irt = get_irq_table(devid, false);
+	irt = get_irq_table(devid);
 	if (!irt)
 		return -ENODEV;
 
-	spin_lock_irqsave(&irt->lock, flags);
+	raw_spin_lock_irqsave(&irt->lock, flags);
 
 	if (ref->lo.fields_vapic.guest_mode) {
 		if (cpu >= 0)
@@ -4393,7 +4419,7 @@ int amd_iommu_update_ga(int cpu, bool is_run, void *data)
 		barrier();
 	}
 
-	spin_unlock_irqrestore(&irt->lock, flags);
+	raw_spin_unlock_irqrestore(&irt->lock, flags);
 
 	iommu_flush_irt(iommu, devid);
 	iommu_completion_wait(iommu);

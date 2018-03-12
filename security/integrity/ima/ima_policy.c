@@ -40,6 +40,8 @@
 #define APPRAISE	0x0004	/* same as IMA_APPRAISE */
 #define DONT_APPRAISE	0x0008
 #define AUDIT		0x0040
+#define HASH		0x0100
+#define DONT_HASH	0x0200
 
 #define INVALID_PCR(a) (((a) < 0) || \
 	(a) >= (FIELD_SIZEOF(struct integrity_iint_cache, measured_pcrs) * 8))
@@ -241,16 +243,17 @@ static void ima_lsm_update_rules(void)
  * ima_match_rules - determine whether an inode matches the measure rule.
  * @rule: a pointer to a rule
  * @inode: a pointer to an inode
+ * @cred: a pointer to a credentials structure for user validation
+ * @secid: the secid of the task to be validated
  * @func: LIM hook identifier
  * @mask: requested action (MAY_READ | MAY_WRITE | MAY_APPEND | MAY_EXEC)
  *
  * Returns true on rule match, false on failure.
  */
 static bool ima_match_rules(struct ima_rule_entry *rule, struct inode *inode,
+			    const struct cred *cred, u32 secid,
 			    enum ima_hooks func, int mask)
 {
-	struct task_struct *tsk = current;
-	const struct cred *cred = current_cred();
 	int i;
 
 	if ((rule->flags & IMA_FUNC) &&
@@ -285,7 +288,7 @@ static bool ima_match_rules(struct ima_rule_entry *rule, struct inode *inode,
 		return false;
 	for (i = 0; i < MAX_LSM_RULES; i++) {
 		int rc = 0;
-		u32 osid, sid;
+		u32 osid;
 		int retried = 0;
 
 		if (!rule->lsm[i].rule)
@@ -305,8 +308,7 @@ retry:
 		case LSM_SUBJ_USER:
 		case LSM_SUBJ_ROLE:
 		case LSM_SUBJ_TYPE:
-			security_task_getsecid(tsk, &sid);
-			rc = security_filter_rule_match(sid,
+			rc = security_filter_rule_match(secid,
 							rule->lsm[i].type,
 							Audit_equal,
 							rule->lsm[i].rule,
@@ -339,6 +341,8 @@ static int get_subaction(struct ima_rule_entry *rule, enum ima_hooks func)
 		return IMA_MMAP_APPRAISE;
 	case BPRM_CHECK:
 		return IMA_BPRM_APPRAISE;
+	case CREDS_CHECK:
+		return IMA_CREDS_APPRAISE;
 	case FILE_CHECK:
 	case POST_SETATTR:
 		return IMA_FILE_APPRAISE;
@@ -351,6 +355,9 @@ static int get_subaction(struct ima_rule_entry *rule, enum ima_hooks func)
 /**
  * ima_match_policy - decision based on LSM and other conditions
  * @inode: pointer to an inode for which the policy decision is being made
+ * @cred: pointer to a credentials structure for which the policy decision is
+ *        being made
+ * @secid: LSM secid of the task to be validated
  * @func: IMA hook identifier
  * @mask: requested action (MAY_READ | MAY_WRITE | MAY_APPEND | MAY_EXEC)
  * @pcr: set the pcr to extend
@@ -362,8 +369,8 @@ static int get_subaction(struct ima_rule_entry *rule, enum ima_hooks func)
  * list when walking it.  Reads are many orders of magnitude more numerous
  * than writes so ima_match_policy() is classical RCU candidate.
  */
-int ima_match_policy(struct inode *inode, enum ima_hooks func, int mask,
-		     int flags, int *pcr)
+int ima_match_policy(struct inode *inode, const struct cred *cred, u32 secid,
+		     enum ima_hooks func, int mask, int flags, int *pcr)
 {
 	struct ima_rule_entry *entry;
 	int action = 0, actmask = flags | (flags << 1);
@@ -374,14 +381,16 @@ int ima_match_policy(struct inode *inode, enum ima_hooks func, int mask,
 		if (!(entry->action & actmask))
 			continue;
 
-		if (!ima_match_rules(entry, inode, func, mask))
+		if (!ima_match_rules(entry, inode, cred, secid, func, mask))
 			continue;
 
 		action |= entry->flags & IMA_ACTION_FLAGS;
 
 		action |= entry->action & IMA_DO_MASK;
-		if (entry->action & IMA_APPRAISE)
+		if (entry->action & IMA_APPRAISE) {
 			action |= get_subaction(entry, func);
+			action ^= IMA_HASH;
+		}
 
 		if (entry->action & IMA_DO_MASK)
 			actmask &= ~(entry->action | entry->action << 1);
@@ -427,14 +436,21 @@ void ima_update_policy_flag(void)
  */
 void __init ima_init_policy(void)
 {
-	int i, measure_entries, appraise_entries, secure_boot_entries;
+	int i;
+	int measure_entries = 0;
+	int appraise_entries = 0;
+	int secure_boot_entries = 0;
+	bool kernel_locked_down = __kernel_is_locked_down(NULL, false);
 
 	/* if !ima_policy set entries = 0 so we load NO default rules */
-	measure_entries = ima_policy ? ARRAY_SIZE(dont_measure_rules) : 0;
-	appraise_entries = ima_use_appraise_tcb ?
-			 ARRAY_SIZE(default_appraise_rules) : 0;
-	secure_boot_entries = ima_use_secure_boot ?
-			ARRAY_SIZE(secure_boot_rules) : 0;
+	if (ima_policy)
+		measure_entries = ARRAY_SIZE(dont_measure_rules);
+
+	if (ima_use_appraise_tcb)
+		appraise_entries = ARRAY_SIZE(default_appraise_rules);
+
+	if (ima_use_secure_boot || kernel_locked_down)
+		secure_boot_entries = ARRAY_SIZE(secure_boot_rules);
 
 	for (i = 0; i < measure_entries; i++)
 		list_add_tail(&dont_measure_rules[i].list, &ima_default_rules);
@@ -455,11 +471,23 @@ void __init ima_init_policy(void)
 
 	/*
 	 * Insert the appraise rules requiring file signatures, prior to
-	 * any other appraise rules.
+	 * any other appraise rules.  In secure boot lock-down mode, also
+	 * require these appraise rules for custom policies.
 	 */
-	for (i = 0; i < secure_boot_entries; i++)
-		list_add_tail(&secure_boot_rules[i].list,
-			      &ima_default_rules);
+	for (i = 0; i < secure_boot_entries; i++) {
+		struct ima_rule_entry *entry;
+
+		/* Include for builtin policies */
+		list_add_tail(&secure_boot_rules[i].list, &ima_default_rules);
+
+		/* Include for custom policies */
+		if (kernel_locked_down) {
+			entry = kmemdup(&secure_boot_rules[i], sizeof(*entry),
+					GFP_KERNEL);
+			if (entry)
+				list_add_tail(&entry->list, &ima_policy_rules);
+		}
+	}
 
 	for (i = 0; i < appraise_entries; i++) {
 		list_add_tail(&default_appraise_rules[i].list,
@@ -521,7 +549,7 @@ enum {
 	Opt_err = -1,
 	Opt_measure = 1, Opt_dont_measure,
 	Opt_appraise, Opt_dont_appraise,
-	Opt_audit,
+	Opt_audit, Opt_hash, Opt_dont_hash,
 	Opt_obj_user, Opt_obj_role, Opt_obj_type,
 	Opt_subj_user, Opt_subj_role, Opt_subj_type,
 	Opt_func, Opt_mask, Opt_fsmagic,
@@ -538,6 +566,8 @@ static match_table_t policy_tokens = {
 	{Opt_appraise, "appraise"},
 	{Opt_dont_appraise, "dont_appraise"},
 	{Opt_audit, "audit"},
+	{Opt_hash, "hash"},
+	{Opt_dont_hash, "dont_hash"},
 	{Opt_obj_user, "obj_user=%s"},
 	{Opt_obj_role, "obj_role=%s"},
 	{Opt_obj_type, "obj_type=%s"},
@@ -671,6 +701,22 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 
 			entry->action = AUDIT;
 			break;
+		case Opt_hash:
+			ima_log_string(ab, "action", "hash");
+
+			if (entry->action != UNKNOWN)
+				result = -EINVAL;
+
+			entry->action = HASH;
+			break;
+		case Opt_dont_hash:
+			ima_log_string(ab, "action", "dont_hash");
+
+			if (entry->action != UNKNOWN)
+				result = -EINVAL;
+
+			entry->action = DONT_HASH;
+			break;
 		case Opt_func:
 			ima_log_string(ab, "func", args[0].from);
 
@@ -691,6 +737,8 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 				entry->func = MMAP_CHECK;
 			else if (strcmp(args[0].from, "BPRM_CHECK") == 0)
 				entry->func = BPRM_CHECK;
+			else if (strcmp(args[0].from, "CREDS_CHECK") == 0)
+				entry->func = CREDS_CHECK;
 			else if (strcmp(args[0].from, "KEXEC_KERNEL_CHECK") ==
 				 0)
 				entry->func = KEXEC_KERNEL_CHECK;
@@ -1040,6 +1088,10 @@ int ima_policy_show(struct seq_file *m, void *v)
 		seq_puts(m, pt(Opt_dont_appraise));
 	if (entry->action & AUDIT)
 		seq_puts(m, pt(Opt_audit));
+	if (entry->action & HASH)
+		seq_puts(m, pt(Opt_hash));
+	if (entry->action & DONT_HASH)
+		seq_puts(m, pt(Opt_dont_hash));
 
 	seq_puts(m, " ");
 

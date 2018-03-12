@@ -251,7 +251,7 @@ static inline bool inode_cgwb_enabled(struct inode *inode)
 		cgroup_subsys_on_dfl(io_cgrp_subsys) &&
 		bdi_cap_account_dirty(bdi) &&
 		(bdi->capabilities & BDI_CAP_CGROUP_WRITEBACK) &&
-		(inode->i_sb->s_iflags & SB_I_CGROUPWB);
+		IS_CGROUPWB(inode);
 }
 
 /**
@@ -332,7 +332,7 @@ static inline bool inode_to_wb_is_valid(struct inode *inode)
  * holding either @inode->i_lock, @inode->i_mapping->tree_lock, or the
  * associated wb's list_lock.
  */
-static inline struct bdi_writeback *inode_to_wb(struct inode *inode)
+static inline struct bdi_writeback *inode_to_wb(const struct inode *inode)
 {
 #ifdef CONFIG_LOCKDEP
 	WARN_ON_ONCE(debug_locks &&

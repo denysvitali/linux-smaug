@@ -1241,6 +1241,161 @@ static int __dwc3_gadget_kick_transfer(struct dwc3_ep *dep)
 	return 0;
 }
 
+static int __dwc3_cleanup_done_trbs(struct dwc3 *dwc, struct dwc3_ep *dep,
+				    struct dwc3_request *req,
+				    struct dwc3_trb *trb,
+				    const struct dwc3_event_depevt *event,
+				    int status, int chain);
+
+/**
+ * set_isoc_start_frame - set valid wrap-around isoc start frame bits
+ * @dwc: pointer to our context structure
+ * @dep: isoc endpoint
+ * @cur_uf: The current microframe taken from XferNotReady event
+ *
+ * This function tests for the correct combination of BIT[15:14] from
+ * the 16-bit microframe number reported by the XferNotReady event and
+ * set it to dep->frame_number.
+ *
+ * In DWC_usb31 version 1.70a-ea06 and prior, for highspeed and fullspeed
+ * isochronous IN, BIT[15:14] of the 16-bit microframe number reported by
+ * the XferNotReady event are invalid. The driver uses this number to
+ * schedule the isochronous transfer and passes it to the START TRANSFER
+ * command. Because this number is invalid, the command may fail. If
+ * BIT[15:14] matches the internal 16-bit microframe, the START TRANSFER
+ * command will pass and the transfer will start at the scheduled time, if
+ * it is off by 1, the command will still pass, but the transfer will start
+ * 2 seconds in the future. All other conditions the START TRANSFER command
+ * will fail with bus-expiry.
+ *
+ * In order to workaround this issue, we can issue multiple START TRANSFER
+ * commands with different values of BIT[15:14]: 'b00, 'b01, 'b10, and 'b11
+ * and do an END TRANSFER command. Each combination is 2 seconds apart. 4
+ * seconds into the future will cause a bus-expiry failure. As the result,
+ * within the 4 possible combinations for BIT[15:14], there will be 2
+ * successful and 2 failure START COMMAND status. One of the 2 successful
+ * command status will result in a 2-second delay. The smaller BIT[15:14]
+ * value is the correct one.
+ *
+ * Since there are only 4 outcomes and the results are ordered, we can
+ * simply test 2 START TRANSFER commands with BIT[15:14] combinations 'b00
+ * and 'b01 to deduce the smallest successful combination.
+ *
+ *             +---------+---------+
+ *             | BIT(15) | BIT(14) |
+ *             +=========+=========+
+ *      test0  |   0     |    0    |
+ *             +---------+---------+
+ *      test1  |   0     |    1    |
+ *             +---------+---------+
+ *
+ * With test0 and test1 BIT[15:14] combinations, here is the logic:
+ * if test0 passes and test1 passes, BIT[15:14] is 'b00
+ * if test0 passes and test1 fails, BIT[15:14] is 'b11
+ * if test0 fails and test1 fails, BIT[15:14] is 'b10
+ * if test0 fails and test1 passes, BIT[15:14] is 'b01
+ *
+ * Synopsys STAR 9001202023: Wrong microframe number for isochronous IN
+ * endpoints.
+ *
+ * Return 0 if the dep->frame_number is set, return 1 if END TRANSFER
+ * command is executed, and return negative errno.
+ */
+static int set_isoc_start_frame(struct dwc3 *dwc, struct dwc3_ep *dep,
+				u32 cur_uf)
+{
+	struct dwc3_request *req;
+	int ret = 0;
+	int test0, test1;
+
+	/* Store the 14-bit frame number on the first test */
+	if (!dep->frame_number_15_14)
+		dep->frame_number = cur_uf & ~(BIT(14) | BIT(15));
+
+	while (dep->frame_number_15_14 < 2) {
+		u32 cmd;
+		u32 frame_number;
+		struct dwc3_gadget_ep_cmd_params params;
+		struct dwc3_event_depevt event;
+
+		event.endpoint_number = dep->number;
+		event.endpoint_event = DWC3_DEPEVT_EPCMDCMPLT;
+
+		req = next_request(&dep->pending_list);
+		if (!req) {
+			dev_info(dwc->dev, "%s: ran out of requests\n",
+				 dep->name);
+			dep->flags |= DWC3_EP_PENDING_REQUEST;
+			return -EINVAL;
+		}
+
+		frame_number = dep->frame_number;
+		frame_number |= dep->frame_number_15_14 << 14;
+		frame_number += max_t(u32, 16, dep->interval);
+
+		dwc3_prepare_one_trb(dep, req, false, 0);
+
+		params.param0 = upper_32_bits(req->trb_dma);
+		params.param1 = lower_32_bits(req->trb_dma);
+
+		cmd = DWC3_DEPCMD_STARTTRANSFER;
+		cmd |= DWC3_DEPCMD_PARAM(frame_number);
+		ret = dwc3_send_gadget_ep_cmd(dep, cmd, &params);
+
+		if (dep->frame_number_15_14 == 0)
+			dep->test0_status = ret;
+
+		if (!ret) {
+			dep->resource_index =
+				dwc3_gadget_ep_get_transfer_index(dep);
+			dwc3_stop_active_transfer(dep->dwc, dep->number, true);
+		}
+
+		__dwc3_cleanup_done_trbs(dep->dwc, dep, req, req->trb,
+					 &event, 0, false);
+		req->trb->ctrl &= ~DWC3_TRB_CTRL_HWO;
+		dwc3_gadget_giveback(dep, req, 0);
+
+		dep->frame_number_15_14++;
+
+		/*
+		 * Return early and wait for the next XferNotReady event to come
+		 * before sending the next START TRANSFER command.
+		 */
+		if (!ret)
+			return 1;
+
+		/* End test if not bus-expiry status */
+		if (ret != -EAGAIN) {
+			dep->test0_status = -EINVAL;
+			dep->frame_number_15_14 = 0;
+			return ret;
+		}
+	}
+
+	/* test0 and test1 are both completed at this point */
+	test0 = (dep->test0_status == 0);
+	test1 = (ret == 0);
+
+	if (!test0 && test1)
+		dep->frame_number_15_14 = 1;
+	else if (!test0 && !test1)
+		dep->frame_number_15_14 = 2;
+	else if (test0 && !test1)
+		dep->frame_number_15_14 = 3;
+	else if (test0 && test1)
+		dep->frame_number_15_14 = 0;
+
+	dep->frame_number |= dep->frame_number_15_14 << 14;
+	dep->frame_number += max_t(u32, 16, dep->interval);
+
+	/* Reinitialize test variables */
+	dep->test0_status = -EINVAL;
+	dep->frame_number_15_14 = 0;
+
+	return 0;
+}
+
 static int __dwc3_gadget_get_frame(struct dwc3 *dwc)
 {
 	u32			reg;
@@ -1252,6 +1407,8 @@ static int __dwc3_gadget_get_frame(struct dwc3 *dwc)
 static void __dwc3_gadget_start_isoc(struct dwc3 *dwc,
 		struct dwc3_ep *dep, u32 cur_uf)
 {
+	bool need_isoc_start_transfer_workaround = false;
+
 	if (list_empty(&dep->pending_list)) {
 		dev_info(dwc->dev, "%s: ran out of requests\n",
 				dep->name);
@@ -1259,11 +1416,31 @@ static void __dwc3_gadget_start_isoc(struct dwc3 *dwc,
 		return;
 	}
 
-	/*
-	 * Schedule the first trb for one interval in the future or at
-	 * least 4 microframes.
-	 */
-	dep->frame_number = cur_uf + max_t(u32, 4, dep->interval);
+	if (dwc3_is_usb31(dwc) && dwc->revision <= DWC3_USB31_REVISION_170A) {
+		need_isoc_start_transfer_workaround = true;
+
+		/* for 1.70a only ea01 to ea06 are affected */
+		if (dwc->revision == DWC3_USB31_REVISION_170A &&
+		    !(dwc->ver_type >= DWC31_VERSIONTYPE_EA01 &&
+		      dwc->ver_type <= DWC31_VERSIONTYPE_EA06))
+			need_isoc_start_transfer_workaround = false;
+	}
+
+	if (!dwc->dis_start_transfer_quirk &&
+	    need_isoc_start_transfer_workaround &&
+	    dep->direction &&
+	    (dwc->gadget.speed == USB_SPEED_HIGH ||
+	     dwc->gadget.speed == USB_SPEED_FULL)) {
+		if (set_isoc_start_frame(dwc, dep, cur_uf))
+			return;
+	} else {
+		/*
+		 * Schedule the first trb for one interval in the future or at
+		 * least 4 microframes.
+		 */
+		dep->frame_number = cur_uf + max_t(u32, 4, dep->interval);
+	}
+
 	__dwc3_gadget_kick_transfer(dep);
 }
 
@@ -1858,7 +2035,11 @@ static int __dwc3_gadget_start(struct dwc3 *dwc)
 	 * bursts of data without going through any sort of endpoint throttling.
 	 */
 	reg = dwc3_readl(dwc->regs, DWC3_GRXTHRCFG);
-	reg &= ~DWC3_GRXTHRCFG_PKTCNTSEL;
+	if (dwc3_is_usb31(dwc))
+		reg &= ~DWC31_GRXTHRCFG_PKTCNTSEL;
+	else
+		reg &= ~DWC3_GRXTHRCFG_PKTCNTSEL;
+
 	dwc3_writel(dwc->regs, DWC3_GRXTHRCFG, reg);
 
 	dwc3_gadget_setup_nump(dwc);
@@ -2005,7 +2186,8 @@ static void dwc3_gadget_set_speed(struct usb_gadget *g,
 	 * STAR#9000525659: Clock Domain Crossing on DCTL in
 	 * USB 2.0 Mode
 	 */
-	if (dwc->revision < DWC3_REVISION_220A) {
+	if (dwc->revision < DWC3_REVISION_220A &&
+	    !dwc->dis_metastability_quirk) {
 		reg |= DWC3_DCFG_SUPERSPEED;
 	} else {
 		switch (speed) {
@@ -2069,6 +2251,8 @@ static int dwc3_gadget_init_endpoints(struct dwc3 *dwc, u8 total)
 		dep->number = epnum;
 		dep->direction = direction;
 		dep->regs = dwc->regs + DWC3_DEP_BASE(epnum);
+		dep->frame_number_15_14 = 0;
+		dep->test0_status = -EINVAL;
 		dwc->eps[epnum] = dep;
 
 		snprintf(dep->name, sizeof(dep->name), "ep%u%s", num,
@@ -2100,7 +2284,10 @@ static int dwc3_gadget_init_endpoints(struct dwc3 *dwc, u8 total)
 			mdwidth /= 8;
 
 			size = dwc3_readl(dwc->regs, DWC3_GTXFIFOSIZ(num));
-			size = DWC3_GTXFIFOSIZ_TXFDEF(size);
+			if (dwc3_is_usb31(dwc))
+				size = DWC31_GTXFIFOSIZ_TXFDEF(size);
+			else
+				size = DWC3_GTXFIFOSIZ_TXFDEF(size);
 
 			/* FIFO Depth is in MDWDITH bytes. Multiply */
 			size *= mdwidth;
@@ -2744,6 +2931,8 @@ static void dwc3_gadget_conndone_interrupt(struct dwc3 *dwc)
 		break;
 	}
 
+	dwc->eps[1]->endpoint.maxpacket = dwc->gadget.ep0->maxpacket;
+
 	/* Enable USB2 LPM Capability */
 
 	if ((dwc->revision > DWC3_REVISION_194A) &&
@@ -3224,7 +3413,8 @@ int dwc3_gadget_init(struct dwc3 *dwc)
 	 * is less than super speed because we don't have means, yet, to tell
 	 * composite.c that we are USB 2.0 + LPM ECN.
 	 */
-	if (dwc->revision < DWC3_REVISION_220A)
+	if (dwc->revision < DWC3_REVISION_220A &&
+	    !dwc->dis_metastability_quirk)
 		dev_info(dwc->dev, "changing max_speed on rev %08x\n",
 				dwc->revision);
 

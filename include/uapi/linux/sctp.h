@@ -125,6 +125,8 @@ typedef __s32 sctp_assoc_t;
 #define SCTP_SOCKOPT_PEELOFF_FLAGS 122
 #define SCTP_STREAM_SCHEDULER	123
 #define SCTP_STREAM_SCHEDULER_VALUE	124
+#define SCTP_INTERLEAVING_SUPPORTED	125
+#define SCTP_SENDMSG_CONNECT	126
 
 /* PR-SCTP policies */
 #define SCTP_PR_SCTP_NONE	0x0000
@@ -259,6 +261,19 @@ struct sctp_nxtinfo {
 	sctp_assoc_t nxt_assoc_id;
 };
 
+/* 5.3.7 SCTP PR-SCTP Information Structure (SCTP_PRINFO)
+ *
+ *   This cmsghdr structure specifies SCTP options for sendmsg().
+ *
+ *   cmsg_level    cmsg_type      cmsg_data[]
+ *   ------------  ------------   -------------------
+ *   IPPROTO_SCTP  SCTP_PRINFO    struct sctp_prinfo
+ */
+struct sctp_prinfo {
+	__u16 pr_policy;
+	__u32 pr_value;
+};
+
 /*
  *  sinfo_flags: 16 bits (unsigned integer)
  *
@@ -270,6 +285,8 @@ enum sctp_sinfo_flags {
 	SCTP_ADDR_OVER		= (1 << 1), /* Override the primary destination. */
 	SCTP_ABORT		= (1 << 2), /* Send an ABORT message to the peer. */
 	SCTP_SACK_IMMEDIATELY	= (1 << 3), /* SACK should be sent without delay. */
+	/* 2 bits here have been used by SCTP_PR_SCTP_MASK */
+	SCTP_SENDALL		= (1 << 6),
 	SCTP_NOTIFICATION	= MSG_NOTIFICATION, /* Next message is not user msg but notification. */
 	SCTP_EOF		= MSG_FIN,  /* Initiate graceful shutdown process. */
 };
@@ -292,6 +309,14 @@ typedef enum sctp_cmsg_type {
 #define SCTP_RCVINFO	SCTP_RCVINFO
 	SCTP_NXTINFO,		/* 5.3.6 SCTP Next Receive Information Structure */
 #define SCTP_NXTINFO	SCTP_NXTINFO
+	SCTP_PRINFO,		/* 5.3.7 SCTP PR-SCTP Information Structure */
+#define SCTP_PRINFO	SCTP_PRINFO
+	SCTP_AUTHINFO,		/* 5.3.8 SCTP AUTH Information Structure (RESERVED) */
+#define SCTP_AUTHINFO	SCTP_AUTHINFO
+	SCTP_DSTADDRV4,		/* 5.3.9 SCTP Destination IPv4 Address Structure */
+#define SCTP_DSTADDRV4	SCTP_DSTADDRV4
+	SCTP_DSTADDRV6,		/* 5.3.10 SCTP Destination IPv6 Address Structure */
+#define SCTP_DSTADDRV6	SCTP_DSTADDRV6
 } sctp_cmsg_t;
 
 /*
@@ -459,6 +484,8 @@ struct sctp_pdapi_event {
 	__u32 pdapi_length;
 	__u32 pdapi_indication;
 	sctp_assoc_t pdapi_assoc_id;
+	__u32 pdapi_stream;
+	__u32 pdapi_seq;
 };
 
 enum { SCTP_PARTIAL_DELIVERY_ABORTED=0, };

@@ -7,6 +7,7 @@
  * Copyright 2007, Michael Wu <flamingice@sourmilk.net>
  * Copyright 2013-2014  Intel Mobile Communications GmbH
  * Copyright (C) 2015 - 2017 Intel Deutschland GmbH
+ * Copyright (C) 2018        Intel Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -473,6 +474,7 @@ static void ieee80211_add_ht_ie(struct ieee80211_sub_if_data *sdata,
 	case IEEE80211_SMPS_AUTOMATIC:
 	case IEEE80211_SMPS_NUM_MODES:
 		WARN_ON(1);
+		/* fall through */
 	case IEEE80211_SMPS_OFF:
 		cap |= WLAN_HT_CAP_SM_PS_DISABLED <<
 			IEEE80211_HT_CAP_SM_PS_SHIFT;
@@ -2007,9 +2009,22 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 		ieee80211_flush_queues(local, sdata, true);
 
 	/* deauthenticate/disassociate now */
-	if (tx || frame_buf)
+	if (tx || frame_buf) {
+		struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+
+		/*
+		 * In multi channel scenarios guarantee that the virtual
+		 * interface is granted immediate airtime to transmit the
+		 * deauthentication frame by calling mgd_prepare_tx, if the
+		 * driver requested so.
+		 */
+		if (ieee80211_hw_check(&local->hw, DEAUTH_NEED_MGD_TX_PREP) &&
+		    !ifmgd->have_beacon)
+			drv_mgd_prepare_tx(sdata->local, sdata);
+
 		ieee80211_send_deauth_disassoc(sdata, ifmgd->bssid, stype,
 					       reason, tx, frame_buf);
+	}
 
 	/* flush out frame - make sure the deauth was actually sent */
 	if (tx)
@@ -2150,7 +2165,7 @@ static void ieee80211_sta_tx_wmm_ac_notify(struct ieee80211_sub_if_data *sdata,
 					   u16 tx_time)
 {
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
-	u16 tid = *ieee80211_get_qos_ctl(hdr) & IEEE80211_QOS_CTL_TID_MASK;
+	u16 tid = ieee80211_get_tid(hdr);
 	int ac = ieee80211_ac_from_tid(tid);
 	struct ieee80211_sta_tx_tspec *tx_tspec = &ifmgd->tx_tspec[ac];
 	unsigned long now = jiffies;
@@ -2861,10 +2876,11 @@ static bool ieee80211_assoc_success(struct ieee80211_sub_if_data *sdata,
 	aid = le16_to_cpu(mgmt->u.assoc_resp.aid);
 	capab_info = le16_to_cpu(mgmt->u.assoc_resp.capab_info);
 
-	if ((aid & (BIT(15) | BIT(14))) != (BIT(15) | BIT(14)))
-		sdata_info(sdata, "invalid AID value 0x%x; bits 15:14 not set\n",
-			   aid);
-	aid &= ~(BIT(15) | BIT(14));
+	/*
+	 * The 5 MSB of the AID field are reserved
+	 * (802.11-2016 9.4.1.8 AID field)
+	 */
+	aid &= 0x7ff;
 
 	ifmgd->broken_ap = false;
 

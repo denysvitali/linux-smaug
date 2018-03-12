@@ -9,8 +9,6 @@
  */
 #include <linux/acpi.h>
 #include <linux/gpio/driver.h>
-/* FIXME: for gpio_get_value(), replace this with direct register read */
-#include <linux/gpio.h>
 #include <linux/err.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
@@ -53,9 +51,9 @@
 #define GPIO_EXT_PORTD		0x5c
 
 #define DWAPB_MAX_PORTS		4
-#define GPIO_EXT_PORT_SIZE	(GPIO_EXT_PORTB - GPIO_EXT_PORTA)
-#define GPIO_SWPORT_DR_SIZE	(GPIO_SWPORTB_DR - GPIO_SWPORTA_DR)
-#define GPIO_SWPORT_DDR_SIZE	(GPIO_SWPORTB_DDR - GPIO_SWPORTA_DDR)
+#define GPIO_EXT_PORT_STRIDE	0x04 /* register stride 32 bits */
+#define GPIO_SWPORT_DR_STRIDE	0x0c /* register stride 3*32 bits */
+#define GPIO_SWPORT_DDR_STRIDE	0x0c /* register stride 3*32 bits */
 
 #define GPIO_REG_OFFSET_V2	1
 
@@ -153,16 +151,40 @@ static int dwapb_gpio_to_irq(struct gpio_chip *gc, unsigned offset)
 	return irq_find_mapping(gpio->domain, offset);
 }
 
+static struct dwapb_gpio_port *dwapb_offs_to_port(struct dwapb_gpio *gpio, unsigned int offs)
+{
+	struct dwapb_gpio_port *port;
+	int i;
+
+	for (i = 0; i < gpio->nr_ports; i++) {
+		port = &gpio->ports[i];
+		if (port->idx == offs / 32)
+			return port;
+	}
+
+	return NULL;
+}
+
 static void dwapb_toggle_trigger(struct dwapb_gpio *gpio, unsigned int offs)
 {
-	u32 v = dwapb_read(gpio, GPIO_INT_POLARITY);
+	struct dwapb_gpio_port *port = dwapb_offs_to_port(gpio, offs);
+	struct gpio_chip *gc;
+	u32 pol;
+	int val;
 
-	if (gpio_get_value(gpio->ports[0].gc.base + offs))
-		v &= ~BIT(offs);
+	if (!port)
+		return;
+	gc = &port->gc;
+
+	pol = dwapb_read(gpio, GPIO_INT_POLARITY);
+	/* Just read the current value right out of the data register */
+	val = gc->get(gc, offs % 32);
+	if (val)
+		pol &= ~BIT(offs);
 	else
-		v |= BIT(offs);
+		pol |= BIT(offs);
 
-	dwapb_write(gpio, GPIO_INT_POLARITY, v);
+	dwapb_write(gpio, GPIO_INT_POLARITY, pol);
 }
 
 static u32 dwapb_do_irq(struct dwapb_gpio *gpio)
@@ -476,11 +498,12 @@ static int dwapb_gpio_add_port(struct dwapb_gpio *gpio,
 		return -ENOMEM;
 #endif
 
-	dat = gpio->regs + GPIO_EXT_PORTA + (pp->idx * GPIO_EXT_PORT_SIZE);
-	set = gpio->regs + GPIO_SWPORTA_DR + (pp->idx * GPIO_SWPORT_DR_SIZE);
+	dat = gpio->regs + GPIO_EXT_PORTA + (pp->idx * GPIO_EXT_PORT_STRIDE);
+	set = gpio->regs + GPIO_SWPORTA_DR + (pp->idx * GPIO_SWPORT_DR_STRIDE);
 	dirout = gpio->regs + GPIO_SWPORTA_DDR +
-		(pp->idx * GPIO_SWPORT_DDR_SIZE);
+		(pp->idx * GPIO_SWPORT_DDR_STRIDE);
 
+	/* This registers 32 GPIO lines per port */
 	err = bgpio_init(&port->gc, gpio->dev, 4, dat, set, NULL, dirout,
 			 NULL, 0);
 	if (err) {
@@ -710,13 +733,13 @@ static int dwapb_gpio_suspend(struct device *dev)
 
 		BUG_ON(!ctx);
 
-		offset = GPIO_SWPORTA_DDR + idx * GPIO_SWPORT_DDR_SIZE;
+		offset = GPIO_SWPORTA_DDR + idx * GPIO_SWPORT_DDR_STRIDE;
 		ctx->dir = dwapb_read(gpio, offset);
 
-		offset = GPIO_SWPORTA_DR + idx * GPIO_SWPORT_DR_SIZE;
+		offset = GPIO_SWPORTA_DR + idx * GPIO_SWPORT_DR_STRIDE;
 		ctx->data = dwapb_read(gpio, offset);
 
-		offset = GPIO_EXT_PORTA + idx * GPIO_EXT_PORT_SIZE;
+		offset = GPIO_EXT_PORTA + idx * GPIO_EXT_PORT_STRIDE;
 		ctx->ext = dwapb_read(gpio, offset);
 
 		/* Only port A can provide interrupts */
@@ -753,13 +776,13 @@ static int dwapb_gpio_resume(struct device *dev)
 
 		BUG_ON(!ctx);
 
-		offset = GPIO_SWPORTA_DR + idx * GPIO_SWPORT_DR_SIZE;
+		offset = GPIO_SWPORTA_DR + idx * GPIO_SWPORT_DR_STRIDE;
 		dwapb_write(gpio, offset, ctx->data);
 
-		offset = GPIO_SWPORTA_DDR + idx * GPIO_SWPORT_DDR_SIZE;
+		offset = GPIO_SWPORTA_DDR + idx * GPIO_SWPORT_DDR_STRIDE;
 		dwapb_write(gpio, offset, ctx->dir);
 
-		offset = GPIO_EXT_PORTA + idx * GPIO_EXT_PORT_SIZE;
+		offset = GPIO_EXT_PORTA + idx * GPIO_EXT_PORT_STRIDE;
 		dwapb_write(gpio, offset, ctx->ext);
 
 		/* Only port A can provide interrupts */

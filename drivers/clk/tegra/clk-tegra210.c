@@ -633,9 +633,9 @@ static void tegra210_vic_mbist_war(struct tegra210_domain_mbist_war *mbist)
 
 static void tegra210_ape_mbist_war(struct tegra210_domain_mbist_war *mbist)
 {
-	int i;
-	u32 ovrc, ovre;
 	void __iomem *i2s_base;
+	unsigned int i;
+	u32 ovrc, ovre;
 
 	ovrc = readl_relaxed(clk_base + LVL2_CLK_GATE_OVRC);
 	ovre = readl_relaxed(clk_base + LVL2_CLK_GATE_OVRE);
@@ -645,6 +645,7 @@ static void tegra210_ape_mbist_war(struct tegra210_domain_mbist_war *mbist)
 	fence_udelay(1, clk_base);
 
 	i2s_base = ahub_base + TEGRA210_I2S_BASE;
+
 	for (i = 0; i < TEGRA210_I2S_CTRLS; i++) {
 		u32 i2s_ctrl;
 
@@ -3327,7 +3328,7 @@ static struct tegra_clk_init_table init_table[] __initdata = {
 	{ TEGRA210_CLK_I2S4, TEGRA210_CLK_PLL_A_OUT0, 11289600, 0 },
 	{ TEGRA210_CLK_HOST1X, TEGRA210_CLK_PLL_P, 136000000, 1 },
 	{ TEGRA210_CLK_SCLK_MUX, TEGRA210_CLK_PLL_P, 0, 1 },
-	{ TEGRA210_CLK_SCLK, TEGRA210_CLK_CLK_MAX, 102000000, 1 },
+	{ TEGRA210_CLK_SCLK, TEGRA210_CLK_CLK_MAX, 102000000, 0 },
 	{ TEGRA210_CLK_DFLL_SOC, TEGRA210_CLK_PLL_P, 51000000, 1 },
 	{ TEGRA210_CLK_DFLL_REF, TEGRA210_CLK_PLL_P, 51000000, 1 },
 	{ TEGRA210_CLK_SBC4, TEGRA210_CLK_PLL_P, 12000000, 1 },
@@ -3342,7 +3343,6 @@ static struct tegra_clk_init_table init_table[] __initdata = {
 	{ TEGRA210_CLK_XUSB_DEV_SRC, TEGRA210_CLK_PLL_P_OUT_XUSB, 102000000, 0 },
 	{ TEGRA210_CLK_SATA, TEGRA210_CLK_PLL_P, 104000000, 0 },
 	{ TEGRA210_CLK_SATA_OOB, TEGRA210_CLK_PLL_P, 204000000, 0 },
-	{ TEGRA210_CLK_EMC, TEGRA210_CLK_CLK_MAX, 0, 1 },
 	{ TEGRA210_CLK_MSELECT, TEGRA210_CLK_CLK_MAX, 0, 1 },
 	{ TEGRA210_CLK_CSITE, TEGRA210_CLK_CLK_MAX, 0, 1 },
 	/* TODO find a way to enable this on-demand */
@@ -3453,10 +3453,10 @@ static int tegra210_reset_deassert(unsigned long id)
 
 static void tegra210_mbist_clk_init(void)
 {
-	int i, j;
+	unsigned int i, j;
 
 	for (i = 0; i < ARRAY_SIZE(tegra210_pg_mbist_war); i++) {
-		int num_clks = tegra210_pg_mbist_war[i].num_clks;
+		unsigned int num_clks = tegra210_pg_mbist_war[i].num_clks;
 		struct clk_bulk_data *clk_data;
 
 		if (!num_clks)
@@ -3516,19 +3516,19 @@ static void __init tegra210_clock_init(struct device_node *np)
 		return;
 	}
 
-	ahub_base = ioremap(TEGRA210_AHUB_BASE, 64*1024);
+	ahub_base = ioremap(TEGRA210_AHUB_BASE, SZ_64K);
 	if (!ahub_base) {
 		pr_err("ioremap tegra210 APE failed\n");
 		return;
 	}
 
-	dispa_base = ioremap(TEGRA210_DISPA_BASE, 256*1024);
+	dispa_base = ioremap(TEGRA210_DISPA_BASE, SZ_256K);
 	if (!dispa_base) {
 		pr_err("ioremap tegra210 DISPA failed\n");
 		return;
 	}
 
-	vic_base = ioremap(TEGRA210_VIC_BASE, 256*1024);
+	vic_base = ioremap(TEGRA210_VIC_BASE, SZ_256K);
 	if (!vic_base) {
 		pr_err("ioremap tegra210 VIC failed\n");
 		return;

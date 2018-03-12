@@ -39,9 +39,6 @@ static int read_rtc_time(struct device *dev, struct rtc_time *tm)
 	tm->tm_yday = 0;
 	tm->tm_isdst = 0;
 
-	if (rtc_valid_tm(tm) < 0)
-		dev_warn(dev, "Read invalid date/time from RTC\n");
-
 	return 0;
 }
 

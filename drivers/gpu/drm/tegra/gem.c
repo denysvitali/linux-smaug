@@ -114,7 +114,7 @@ static const struct host1x_bo_ops tegra_bo_ops = {
 static int tegra_bo_iommu_map(struct tegra_drm *tegra, struct tegra_bo *bo)
 {
 	int prot = IOMMU_READ | IOMMU_WRITE;
-	ssize_t err;
+	int err;
 
 	if (bo->mm)
 		return -EBUSY;
@@ -128,21 +128,20 @@ static int tegra_bo_iommu_map(struct tegra_drm *tegra, struct tegra_bo *bo)
 	err = drm_mm_insert_node_generic(&tegra->mm,
 					 bo->mm, bo->gem.size, PAGE_SIZE, 0, 0);
 	if (err < 0) {
-		dev_err(tegra->drm->dev, "out of I/O virtual memory: %zd\n",
+		dev_err(tegra->drm->dev, "out of I/O virtual memory: %d\n",
 			err);
 		goto unlock;
 	}
 
 	bo->paddr = bo->mm->start;
 
-	err = iommu_map_sg(tegra->domain, bo->paddr, bo->sgt->sgl,
-			   bo->sgt->nents, prot);
-	if (err < 0) {
-		dev_err(tegra->drm->dev, "failed to map buffer: %zd\n", err);
+	bo->size = iommu_map_sg(tegra->domain, bo->paddr, bo->sgt->sgl,
+				bo->sgt->nents, prot);
+	if (!bo->size) {
+		dev_err(tegra->drm->dev, "failed to map buffer\n");
+		err = -ENOMEM;
 		goto remove;
 	}
-
-	bo->size = err;
 
 	mutex_unlock(&tegra->mm_lock);
 
@@ -460,8 +459,7 @@ const struct vm_operations_struct tegra_bo_vm_ops = {
 	.close = drm_gem_vm_close,
 };
 
-static int tegra_gem_mmap(struct drm_gem_object *gem,
-			  struct vm_area_struct *vma)
+int __tegra_gem_mmap(struct drm_gem_object *gem, struct vm_area_struct *vma)
 {
 	struct tegra_bo *bo = to_tegra_bo(gem);
 
@@ -508,7 +506,7 @@ int tegra_drm_mmap(struct file *file, struct vm_area_struct *vma)
 
 	gem = vma->vm_private_data;
 
-	return tegra_gem_mmap(gem, vma);
+	return __tegra_gem_mmap(gem, vma);
 }
 
 static struct sg_table *
@@ -601,7 +599,7 @@ static int tegra_gem_prime_mmap(struct dma_buf *buf, struct vm_area_struct *vma)
 	if (err < 0)
 		return err;
 
-	return tegra_gem_mmap(gem, vma);
+	return __tegra_gem_mmap(gem, vma);
 }
 
 static void *tegra_gem_prime_vmap(struct dma_buf *buf)

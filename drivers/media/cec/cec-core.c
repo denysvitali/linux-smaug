@@ -1,20 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * cec-core.c - HDMI Consumer Electronics Control framework - Core
  *
  * Copyright 2016 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
- *
- * This program is free software; you may redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; version 2 of the License.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
  */
 
 #include <linux/errno.h>
@@ -160,8 +148,9 @@ clr_bit:
  * This function can safely be called if the device node has never been
  * registered or has already been unregistered.
  */
-static void cec_devnode_unregister(struct cec_devnode *devnode)
+static void cec_devnode_unregister(struct cec_adapter *adap)
 {
+	struct cec_devnode *devnode = &adap->devnode;
 	struct cec_fh *fh;
 
 	mutex_lock(&devnode->lock);
@@ -179,6 +168,11 @@ static void cec_devnode_unregister(struct cec_devnode *devnode)
 	devnode->unregistered = true;
 	mutex_unlock(&devnode->lock);
 
+	mutex_lock(&adap->lock);
+	__cec_s_phys_addr(adap, CEC_PHYS_ADDR_INVALID, false);
+	__cec_s_log_addrs(adap, NULL, false);
+	mutex_unlock(&adap->lock);
+
 	cdev_device_del(&devnode->cdev, &devnode->dev);
 	put_device(&devnode->dev);
 }
@@ -192,7 +186,7 @@ static void cec_cec_notify(struct cec_adapter *adap, u16 pa)
 void cec_register_cec_notifier(struct cec_adapter *adap,
 			       struct cec_notifier *notifier)
 {
-	if (WARN_ON(!adap->devnode.registered))
+	if (WARN_ON(!cec_is_registered(adap)))
 		return;
 
 	adap->notifier = notifier;
@@ -280,7 +274,6 @@ struct cec_adapter *cec_allocate_adapter(const struct cec_adap_ops *ops,
 	adap->rc->priv = adap;
 	adap->rc->map_name = RC_MAP_CEC;
 	adap->rc->timeout = MS_TO_NS(100);
-	adap->rc_last_scancode = -1;
 #endif
 	return adap;
 }
@@ -312,17 +305,6 @@ int cec_register_adapter(struct cec_adapter *adap,
 			adap->rc = NULL;
 			return res;
 		}
-		/*
-		 * The REP_DELAY for CEC is really the time between the initial
-		 * 'User Control Pressed' message and the second. The first
-		 * keypress is always seen as non-repeating, the second
-		 * (provided it has the same UI Command) will start the 'Press
-		 * and Hold' (aka repeat) behavior. By setting REP_DELAY to the
-		 * same value as REP_PERIOD the expected CEC behavior is
-		 * reproduced.
-		 */
-		adap->rc->input_dev->rep[REP_DELAY] =
-			adap->rc->input_dev->rep[REP_PERIOD];
 	}
 #endif
 
@@ -373,7 +355,7 @@ void cec_unregister_adapter(struct cec_adapter *adap)
 	if (adap->notifier)
 		cec_notifier_unregister(adap->notifier);
 #endif
-	cec_devnode_unregister(&adap->devnode);
+	cec_devnode_unregister(adap);
 }
 EXPORT_SYMBOL_GPL(cec_unregister_adapter);
 
@@ -381,9 +363,6 @@ void cec_delete_adapter(struct cec_adapter *adap)
 {
 	if (IS_ERR_OR_NULL(adap))
 		return;
-	mutex_lock(&adap->lock);
-	__cec_s_phys_addr(adap, CEC_PHYS_ADDR_INVALID, false);
-	mutex_unlock(&adap->lock);
 	kthread_stop(adap->kthread);
 	if (adap->kthread_config)
 		kthread_stop(adap->kthread_config);

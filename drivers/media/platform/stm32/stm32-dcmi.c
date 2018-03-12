@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Driver for STM32 Digital Camera Memory Interface
  *
@@ -5,7 +6,6 @@
  * Authors: Yannick Fertre <yannick.fertre@st.com>
  *          Hugues Fruchet <hugues.fruchet@st.com>
  *          for STMicroelectronics.
- * License terms:  GNU General Public License (GPL), version 2
  *
  * This driver is based on atmel_isi.c
  *
@@ -234,7 +234,7 @@ static void dcmi_dma_callback(void *param)
 		/* Restart a new DMA transfer with next buffer */
 		if (dcmi->state == RUNNING) {
 			if (list_empty(&dcmi->buffers)) {
-				dev_err(dcmi->dev, "%s: No more buffer queued, cannot capture buffer",
+				dev_err(dcmi->dev, "%s: No more buffer queued, cannot capture buffer\n",
 					__func__);
 				dcmi->errors_count++;
 				dcmi->active = NULL;
@@ -249,15 +249,12 @@ static void dcmi_dma_callback(void *param)
 			list_del_init(&dcmi->active->list);
 
 			if (dcmi_start_capture(dcmi)) {
-				dev_err(dcmi->dev, "%s: Cannot restart capture on DMA complete",
+				dev_err(dcmi->dev, "%s: Cannot restart capture on DMA complete\n",
 					__func__);
 
 				spin_unlock(&dcmi->irqlock);
 				return;
 			}
-
-			/* Enable capture */
-			reg_set(dcmi->regs, DCMI_CR, CR_CAPTURE);
 		}
 
 		break;
@@ -388,8 +385,6 @@ static irqreturn_t dcmi_irq_thread(int irq, void *arg)
 		dcmi->errors_count++;
 		dmaengine_terminate_all(dcmi->dma_chan);
 
-		reg_set(dcmi->regs, DCMI_ICR, IT_FRAME | IT_OVR | IT_ERR);
-
 		dev_dbg(dcmi->dev, "Restarting capture after DCMI error\n");
 
 		if (dcmi_start_capture(dcmi)) {
@@ -483,7 +478,7 @@ static int dcmi_buf_prepare(struct vb2_buffer *vb)
 
 		vb2_set_plane_payload(&buf->vb.vb2_buf, 0, buf->size);
 
-		dev_dbg(dcmi->dev, "buffer[%d] phy=0x%pad size=%zu\n",
+		dev_dbg(dcmi->dev, "buffer[%d] phy=%pad size=%zu\n",
 			vb->index, &buf->paddr, buf->size);
 	}
 
@@ -529,7 +524,7 @@ static int dcmi_start_streaming(struct vb2_queue *vq, unsigned int count)
 
 	ret = clk_enable(dcmi->mclk);
 	if (ret) {
-		dev_err(dcmi->dev, "%s: Failed to start streaming, cannot enable clock",
+		dev_err(dcmi->dev, "%s: Failed to start streaming, cannot enable clock\n",
 			__func__);
 		goto err_release_buffers;
 	}
@@ -605,7 +600,7 @@ static int dcmi_start_streaming(struct vb2_queue *vq, unsigned int count)
 
 	ret = dcmi_start_capture(dcmi);
 	if (ret) {
-		dev_err(dcmi->dev, "%s: Start streaming failed, cannot start capture",
+		dev_err(dcmi->dev, "%s: Start streaming failed, cannot start capture\n",
 			__func__);
 
 		spin_unlock_irq(&dcmi->irqlock);
@@ -656,7 +651,8 @@ static void dcmi_stop_streaming(struct vb2_queue *vq)
 	/* Disable stream on the sub device */
 	ret = v4l2_subdev_call(dcmi->entity.subdev, video, s_stream, 0);
 	if (ret && ret != -ENOIOCTLCMD)
-		dev_err(dcmi->dev, "stream off failed in subdev\n");
+		dev_err(dcmi->dev, "%s: Failed to stop streaming, subdev streamoff error (%d)\n",
+			__func__, ret);
 
 	dcmi->state = STOPPING;
 
@@ -672,7 +668,8 @@ static void dcmi_stop_streaming(struct vb2_queue *vq)
 	reg_clear(dcmi->regs, DCMI_CR, CR_ENABLE);
 
 	if (!timeout) {
-		dev_err(dcmi->dev, "Timeout during stop streaming\n");
+		dev_err(dcmi->dev, "%s: Timeout during stop streaming\n",
+			__func__);
 		dcmi->state = STOPPED;
 	}
 
@@ -1167,6 +1164,22 @@ static int dcmi_enum_framesizes(struct file *file, void *fh,
 	return 0;
 }
 
+static int dcmi_g_parm(struct file *file, void *priv,
+		       struct v4l2_streamparm *p)
+{
+	struct stm32_dcmi *dcmi = video_drvdata(file);
+
+	return v4l2_g_parm_cap(video_devdata(file), dcmi->entity.subdev, p);
+}
+
+static int dcmi_s_parm(struct file *file, void *priv,
+		       struct v4l2_streamparm *p)
+{
+	struct stm32_dcmi *dcmi = video_drvdata(file);
+
+	return v4l2_s_parm_cap(video_devdata(file), dcmi->entity.subdev, p);
+}
+
 static int dcmi_enum_frameintervals(struct file *file, void *fh,
 				    struct v4l2_frmivalenum *fival)
 {
@@ -1268,6 +1281,9 @@ static const struct v4l2_ioctl_ops dcmi_ioctl_ops = {
 	.vidioc_enum_input		= dcmi_enum_input,
 	.vidioc_g_input			= dcmi_g_input,
 	.vidioc_s_input			= dcmi_s_input,
+
+	.vidioc_g_parm			= dcmi_g_parm,
+	.vidioc_s_parm			= dcmi_s_parm,
 
 	.vidioc_enum_framesizes		= dcmi_enum_framesizes,
 	.vidioc_enum_frameintervals	= dcmi_enum_frameintervals,
@@ -1520,7 +1536,7 @@ static int dcmi_graph_parse(struct stm32_dcmi *dcmi, struct device_node *node)
 		/* Remote node to connect */
 		dcmi->entity.node = remote;
 		dcmi->entity.asd.match_type = V4L2_ASYNC_MATCH_FWNODE;
-		dcmi->entity.asd.match.fwnode.fwnode = of_fwnode_handle(remote);
+		dcmi->entity.asd.match.fwnode = of_fwnode_handle(remote);
 		return 0;
 	}
 }

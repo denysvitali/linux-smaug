@@ -260,13 +260,8 @@ ipt_do_table(struct sk_buff *skb,
 	WARN_ON(!(table->valid_hooks & (1 << hook)));
 	local_bh_disable();
 	addend = xt_write_recseq_begin();
-	private = table->private;
+	private = READ_ONCE(table->private); /* Address dependency. */
 	cpu        = smp_processor_id();
-	/*
-	 * Ensure we load private-> members after we've fetched the base
-	 * pointer.
-	 */
-	smp_read_barrier_depends();
 	table_base = private->entries;
 	jumpstack  = (struct ipt_entry **)private->jumpstack[cpu];
 
@@ -335,8 +330,13 @@ ipt_do_table(struct sk_buff *skb,
 				continue;
 			}
 			if (table_base + v != ipt_next_entry(e) &&
-			    !(e->ip.flags & IPT_F_GOTO))
+			    !(e->ip.flags & IPT_F_GOTO)) {
+				if (unlikely(stackidx >= private->stacksize)) {
+					verdict = NF_DROP;
+					break;
+				}
 				jumpstack[stackidx++] = e;
+			}
 
 			e = get_entry(table_base, v);
 			continue;
@@ -378,10 +378,13 @@ mark_source_chains(const struct xt_table_info *newinfo,
 	for (hook = 0; hook < NF_INET_NUMHOOKS; hook++) {
 		unsigned int pos = newinfo->hook_entry[hook];
 		struct ipt_entry *e = entry0 + pos;
+		unsigned int last_pos, depth;
 
 		if (!(valid_hooks & (1 << hook)))
 			continue;
 
+		depth = 0;
+		last_pos = pos;
 		/* Set initial back pointer. */
 		e->counters.pcnt = pos;
 
@@ -402,11 +405,6 @@ mark_source_chains(const struct xt_table_info *newinfo,
 			     t->verdict < 0) || visited) {
 				unsigned int oldpos, size;
 
-				if ((strcmp(t->target.u.user.name,
-					    XT_STANDARD_TARGET) == 0) &&
-				    t->verdict < -NF_MAX_VERDICT - 1)
-					return 0;
-
 				/* Return: backtrack through the last
 				   big jump. */
 				do {
@@ -415,6 +413,8 @@ mark_source_chains(const struct xt_table_info *newinfo,
 					pos = e->counters.pcnt;
 					e->counters.pcnt = 0;
 
+					if (depth)
+						--depth;
 					/* We're at the start. */
 					if (pos == oldpos)
 						goto next;
@@ -439,6 +439,9 @@ mark_source_chains(const struct xt_table_info *newinfo,
 					if (!xt_find_jump_offset(offsets, newpos,
 								 newinfo->number))
 						return 0;
+
+					if (entry0 + newpos != ipt_next_entry(e))
+						++depth;
 				} else {
 					/* ... this is a fallthru */
 					newpos = pos + e->next_offset;
@@ -449,8 +452,15 @@ mark_source_chains(const struct xt_table_info *newinfo,
 				e->counters.pcnt = pos;
 				pos = newpos;
 			}
+			if (depth == 0)
+				last_pos = pos;
 		}
-next:		;
+next:
+		if (last_pos != newinfo->underflow[hook]) {
+			pr_err_ratelimited("last base chain position %u doesn't match underflow %u (hook %u)\n",
+					   last_pos, newinfo->underflow[hook], hook);
+			return 0;
+		}
 	}
 	return 1;
 }
@@ -707,16 +717,9 @@ translate_table(struct net *net, struct xt_table_info *newinfo, void *entry0,
 	if (i != repl->num_entries)
 		goto out_free;
 
-	/* Check hooks all assigned */
-	for (i = 0; i < NF_INET_NUMHOOKS; i++) {
-		/* Only hooks which are valid */
-		if (!(repl->valid_hooks & (1 << i)))
-			continue;
-		if (newinfo->hook_entry[i] == 0xFFFFFFFF)
-			goto out_free;
-		if (newinfo->underflow[i] == 0xFFFFFFFF)
-			goto out_free;
-	}
+	ret = xt_check_table_hooks(newinfo, repl->valid_hooks);
+	if (ret)
+		goto out_free;
 
 	if (!mark_source_chains(newinfo, repl->valid_hooks, entry0, offsets)) {
 		ret = -ELOOP;
@@ -945,7 +948,9 @@ static int compat_table_info(const struct xt_table_info *info,
 	memcpy(newinfo, info, offsetof(struct xt_table_info, entries));
 	newinfo->initial_entries = 0;
 	loc_cpu_entry = info->entries;
-	xt_compat_init_offsets(AF_INET, info->number);
+	ret = xt_compat_init_offsets(AF_INET, info->number);
+	if (ret)
+		return ret;
 	xt_entry_foreach(iter, loc_cpu_entry, info->size) {
 		ret = compat_calc_entry(iter, info, loc_cpu_entry, newinfo);
 		if (ret != 0)
@@ -973,9 +978,8 @@ static int get_info(struct net *net, void __user *user,
 	if (compat)
 		xt_compat_lock(AF_INET);
 #endif
-	t = try_then_request_module(xt_find_table_lock(net, AF_INET, name),
-				    "iptable_%s", name);
-	if (t) {
+	t = xt_request_find_table_lock(net, AF_INET, name);
+	if (!IS_ERR(t)) {
 		struct ipt_getinfo info;
 		const struct xt_table_info *private = t->private;
 #ifdef CONFIG_COMPAT
@@ -1005,7 +1009,7 @@ static int get_info(struct net *net, void __user *user,
 		xt_table_unlock(t);
 		module_put(t->me);
 	} else
-		ret = -ENOENT;
+		ret = PTR_ERR(t);
 #ifdef CONFIG_COMPAT
 	if (compat)
 		xt_compat_unlock(AF_INET);
@@ -1030,7 +1034,7 @@ get_entries(struct net *net, struct ipt_get_entries __user *uptr,
 	get.name[sizeof(get.name) - 1] = '\0';
 
 	t = xt_find_table_lock(net, AF_INET, get.name);
-	if (t) {
+	if (!IS_ERR(t)) {
 		const struct xt_table_info *private = t->private;
 		if (get.size == private->size)
 			ret = copy_entries_to_user(private->size,
@@ -1041,7 +1045,7 @@ get_entries(struct net *net, struct ipt_get_entries __user *uptr,
 		module_put(t->me);
 		xt_table_unlock(t);
 	} else
-		ret = -ENOENT;
+		ret = PTR_ERR(t);
 
 	return ret;
 }
@@ -1058,16 +1062,15 @@ __do_replace(struct net *net, const char *name, unsigned int valid_hooks,
 	struct ipt_entry *iter;
 
 	ret = 0;
-	counters = vzalloc(num_counters * sizeof(struct xt_counters));
+	counters = xt_counters_alloc(num_counters);
 	if (!counters) {
 		ret = -ENOMEM;
 		goto out;
 	}
 
-	t = try_then_request_module(xt_find_table_lock(net, AF_INET, name),
-				    "iptable_%s", name);
-	if (!t) {
-		ret = -ENOENT;
+	t = xt_request_find_table_lock(net, AF_INET, name);
+	if (IS_ERR(t)) {
+		ret = PTR_ERR(t);
 		goto free_newinfo_counters_untrans;
 	}
 
@@ -1089,6 +1092,8 @@ __do_replace(struct net *net, const char *name, unsigned int valid_hooks,
 	    (newinfo->number <= oldinfo->initial_entries))
 		module_put(t->me);
 
+	xt_table_unlock(t);
+
 	get_old_counters(oldinfo, counters);
 
 	/* Decrease module usage counts and free resource */
@@ -1102,7 +1107,6 @@ __do_replace(struct net *net, const char *name, unsigned int valid_hooks,
 		net_warn_ratelimited("iptables: counters copy to user failed while replacing table\n");
 	}
 	vfree(counters);
-	xt_table_unlock(t);
 	return ret;
 
  put_module:
@@ -1181,8 +1185,8 @@ do_add_counters(struct net *net, const void __user *user,
 		return PTR_ERR(paddc);
 
 	t = xt_find_table_lock(net, AF_INET, tmp.name);
-	if (!t) {
-		ret = -ENOENT;
+	if (IS_ERR(t)) {
+		ret = PTR_ERR(t);
 		goto free;
 	}
 
@@ -1420,7 +1424,9 @@ translate_compat_table(struct net *net,
 
 	j = 0;
 	xt_compat_lock(AF_INET);
-	xt_compat_init_offsets(AF_INET, compatr->num_entries);
+	ret = xt_compat_init_offsets(AF_INET, compatr->num_entries);
+	if (ret)
+		goto out_unlock;
 	/* Walk through entries, checking offsets. */
 	xt_entry_foreach(iter0, entry0, compatr->size) {
 		ret = check_compat_entry_size_and_hooks(iter0, info, &size,
@@ -1625,7 +1631,7 @@ compat_get_entries(struct net *net, struct compat_ipt_get_entries __user *uptr,
 
 	xt_compat_lock(AF_INET);
 	t = xt_find_table_lock(net, AF_INET, get.name);
-	if (t) {
+	if (!IS_ERR(t)) {
 		const struct xt_table_info *private = t->private;
 		struct xt_table_info info;
 		ret = compat_table_info(private, &info);
@@ -1639,7 +1645,7 @@ compat_get_entries(struct net *net, struct compat_ipt_get_entries __user *uptr,
 		module_put(t->me);
 		xt_table_unlock(t);
 	} else
-		ret = -ENOENT;
+		ret = PTR_ERR(t);
 
 	xt_compat_unlock(AF_INET);
 	return ret;
@@ -1918,6 +1924,7 @@ static void __net_exit ip_tables_net_exit(struct net *net)
 static struct pernet_operations ip_tables_net_ops = {
 	.init = ip_tables_net_init,
 	.exit = ip_tables_net_exit,
+	.async = true,
 };
 
 static int __init ip_tables_init(void)
@@ -1941,7 +1948,6 @@ static int __init ip_tables_init(void)
 	if (ret < 0)
 		goto err5;
 
-	pr_info("(C) 2000-2006 Netfilter Core Team\n");
 	return 0;
 
 err5:

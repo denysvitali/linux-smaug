@@ -1366,8 +1366,8 @@ static inline char *ks_wlan_translate_scan(struct net_device *dev,
 	/* Add mode */
 	iwe.cmd = SIOCGIWMODE;
 	capabilities = ap->capability;
-	if (capabilities & (BSS_CAP_ESS | BSS_CAP_IBSS)) {
-		if (capabilities & BSS_CAP_ESS)
+	if (capabilities & (WLAN_CAPABILITY_ESS | WLAN_CAPABILITY_IBSS)) {
+		if (capabilities & WLAN_CAPABILITY_ESS)
 			iwe.u.mode = IW_MODE_INFRA;
 		else
 			iwe.u.mode = IW_MODE_ADHOC;
@@ -1396,7 +1396,7 @@ static inline char *ks_wlan_translate_scan(struct net_device *dev,
 
 	/* Add encryption capability */
 	iwe.cmd = SIOCGIWENCODE;
-	if (capabilities & BSS_CAP_PRIVACY)
+	if (capabilities & WLAN_CAPABILITY_PRIVACY)
 		iwe.u.data.flags = IW_ENCODE_ENABLED | IW_ENCODE_NOKEY;
 	else
 		iwe.u.data.flags = IW_ENCODE_DISABLED;
@@ -2990,7 +2990,7 @@ int ks_wlan_net_stop(struct net_device *dev)
 /**
  * is_connect_status() - return true if status is 'connected'
  * @status: high bit is used as FORCE_DISCONNECT, low bits used for
- * 	connect status.
+ *	connect status.
  */
 bool is_connect_status(u32 status)
 {
@@ -3000,7 +3000,7 @@ bool is_connect_status(u32 status)
 /**
  * is_disconnect_status() - return true if status is 'disconnected'
  * @status: high bit is used as FORCE_DISCONNECT, low bits used for
- * 	disconnect status.
+ *	disconnect status.
  */
 bool is_disconnect_status(u32 status)
 {

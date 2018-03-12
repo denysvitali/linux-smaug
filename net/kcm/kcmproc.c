@@ -247,7 +247,6 @@ static int kcm_seq_show(struct seq_file *seq, void *v)
 }
 
 static const struct file_operations kcm_seq_fops = {
-	.owner		= THIS_MODULE,
 	.open		= kcm_seq_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
@@ -397,7 +396,6 @@ static int kcm_stats_seq_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations kcm_stats_seq_fops = {
-	.owner   = THIS_MODULE,
 	.open    = kcm_stats_seq_open,
 	.read    = seq_read,
 	.llseek  = seq_lseek,
@@ -435,6 +433,7 @@ static void kcm_proc_exit_net(struct net *net)
 static struct pernet_operations kcm_net_ops = {
 	.init = kcm_proc_init_net,
 	.exit = kcm_proc_exit_net,
+	.async = true,
 };
 
 int __init kcm_proc_init(void)

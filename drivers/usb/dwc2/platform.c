@@ -221,6 +221,15 @@ static int dwc2_lowlevel_hw_init(struct dwc2_hsotg *hsotg)
 
 	reset_control_deassert(hsotg->reset);
 
+	hsotg->reset_ecc = devm_reset_control_get_optional(hsotg->dev, "dwc2-ecc");
+	if (IS_ERR(hsotg->reset_ecc)) {
+		ret = PTR_ERR(hsotg->reset_ecc);
+		dev_err(hsotg->dev, "error getting reset control for ecc %d\n", ret);
+		return ret;
+	}
+
+	reset_control_deassert(hsotg->reset_ecc);
+
 	/* Set default UTMI width */
 	hsotg->phyif = GUSBCFG_PHYIF16;
 
@@ -319,6 +328,7 @@ static int dwc2_driver_remove(struct platform_device *dev)
 		dwc2_lowlevel_hw_disable(hsotg);
 
 	reset_control_assert(hsotg->reset);
+	reset_control_assert(hsotg->reset_ecc);
 
 	return 0;
 }
@@ -372,8 +382,10 @@ static int dwc2_driver_probe(struct platform_device *dev)
 	if (!dev->dev.dma_mask)
 		dev->dev.dma_mask = &dev->dev.coherent_dma_mask;
 	retval = dma_set_coherent_mask(&dev->dev, DMA_BIT_MASK(32));
-	if (retval)
+	if (retval) {
+		dev_err(&dev->dev, "can't set coherent DMA mask: %d\n", retval);
 		return retval;
+	}
 
 	res = platform_get_resource(dev, IORESOURCE_MEM, 0);
 	hsotg->regs = devm_ioremap_resource(&dev->dev, res);
@@ -429,7 +441,7 @@ static int dwc2_driver_probe(struct platform_device *dev)
 		goto error;
 
 	if (hsotg->dr_mode != USB_DR_MODE_HOST) {
-		retval = dwc2_gadget_init(hsotg, hsotg->irq);
+		retval = dwc2_gadget_init(hsotg);
 		if (retval)
 			goto error;
 		hsotg->gadget_enabled = 1;

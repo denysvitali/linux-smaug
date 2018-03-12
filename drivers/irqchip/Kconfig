@@ -51,6 +51,12 @@ config ARM_GIC_V3_ITS_PCI
 	depends on PCI_MSI
 	default ARM_GIC_V3_ITS
 
+config ARM_GIC_V3_ITS_FSL_MC
+	bool
+	depends on ARM_GIC_V3_ITS
+	depends on FSL_MC_BUS
+	default ARM_GIC_V3_ITS
+
 config ARM_NVIC
 	bool
 	select IRQ_DOMAIN
@@ -342,5 +348,13 @@ config MESON_IRQ_GPIO
        select IRQ_DOMAIN_HIERARCHY
        help
          Support Meson SoC Family GPIO Interrupt Multiplexer
+
+config GOLDFISH_PIC
+       bool "Goldfish programmable interrupt controller"
+       depends on MIPS && (GOLDFISH || COMPILE_TEST)
+       select IRQ_DOMAIN
+       help
+         Say yes here to enable Goldfish interrupt controller driver used
+         for Goldfish based virtual platforms.
 
 endmenu

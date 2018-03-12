@@ -904,13 +904,14 @@ static ssize_t ucma_query_path(struct ucma_context *ctx,
 
 		resp->path_data[i].flags = IB_PATH_GMP | IB_PATH_PRIMARY |
 					   IB_PATH_BIDIRECTIONAL;
-		if (rec->rec_type == SA_PATH_REC_TYPE_IB) {
-			ib_sa_pack_path(rec, &resp->path_data[i].path_rec);
-		} else {
+		if (rec->rec_type == SA_PATH_REC_TYPE_OPA) {
 			struct sa_path_rec ib;
 
 			sa_convert_path_opa_to_ib(&ib, rec);
 			ib_sa_pack_path(&ib, &resp->path_data[i].path_rec);
+
+		} else {
+			ib_sa_pack_path(rec, &resp->path_data[i].path_rec);
 		}
 	}
 
@@ -943,8 +944,8 @@ static ssize_t ucma_query_gid(struct ucma_context *ctx,
 	} else {
 		addr->sib_family = AF_IB;
 		addr->sib_pkey = (__force __be16) resp.pkey;
-		rdma_addr_get_sgid(&ctx->cm_id->route.addr.dev_addr,
-				   (union ib_gid *) &addr->sib_addr);
+		rdma_read_gids(ctx->cm_id, (union ib_gid *)&addr->sib_addr,
+			       NULL);
 		addr->sib_sid = rdma_get_service_id(ctx->cm_id, (struct sockaddr *)
 						    &ctx->cm_id->route.addr.src_addr);
 	}
@@ -956,8 +957,8 @@ static ssize_t ucma_query_gid(struct ucma_context *ctx,
 	} else {
 		addr->sib_family = AF_IB;
 		addr->sib_pkey = (__force __be16) resp.pkey;
-		rdma_addr_get_dgid(&ctx->cm_id->route.addr.dev_addr,
-				   (union ib_gid *) &addr->sib_addr);
+		rdma_read_gids(ctx->cm_id, NULL,
+			       (union ib_gid *)&addr->sib_addr);
 		addr->sib_sid = rdma_get_service_id(ctx->cm_id, (struct sockaddr *)
 						    &ctx->cm_id->route.addr.dst_addr);
 	}
@@ -1148,6 +1149,9 @@ static ssize_t ucma_init_qp_attr(struct ucma_file *file,
 	if (copy_from_user(&cmd, inbuf, sizeof(cmd)))
 		return -EFAULT;
 
+	if (cmd.qp_state > IB_QPS_ERR)
+		return -EINVAL;
+
 	ctx = ucma_get_ctx(file, cmd.id);
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
@@ -1231,9 +1235,9 @@ static int ucma_set_ib_path(struct ucma_context *ctx,
 		struct sa_path_rec opa;
 
 		sa_convert_path_ib_to_opa(&opa, &sa_path);
-		ret = rdma_set_ib_paths(ctx->cm_id, &opa, 1);
+		ret = rdma_set_ib_path(ctx->cm_id, &opa);
 	} else {
-		ret = rdma_set_ib_paths(ctx->cm_id, &sa_path, 1);
+		ret = rdma_set_ib_path(ctx->cm_id, &sa_path);
 	}
 	if (ret)
 		return ret;
@@ -1292,6 +1296,9 @@ static ssize_t ucma_set_option(struct ucma_file *file, const char __user *inbuf,
 	ctx = ucma_get_ctx(file, cmd.id);
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
+
+	if (unlikely(cmd.optval > KMALLOC_MAX_SIZE))
+		return -EINVAL;
 
 	optval = memdup_user((void __user *) (unsigned long) cmd.optval,
 			     cmd.optlen);
@@ -1630,15 +1637,15 @@ static ssize_t ucma_write(struct file *filp, const char __user *buf,
 	return ret;
 }
 
-static unsigned int ucma_poll(struct file *filp, struct poll_table_struct *wait)
+static __poll_t ucma_poll(struct file *filp, struct poll_table_struct *wait)
 {
 	struct ucma_file *file = filp->private_data;
-	unsigned int mask = 0;
+	__poll_t mask = 0;
 
 	poll_wait(filp, &file->poll_wait, wait);
 
 	if (!list_empty(&file->event_list))
-		mask = POLLIN | POLLRDNORM;
+		mask = EPOLLIN | EPOLLRDNORM;
 
 	return mask;
 }

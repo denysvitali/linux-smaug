@@ -1083,57 +1083,6 @@ fail_power_off:
 	return ret;
 }
 
-static int ov2722_g_parm(struct v4l2_subdev *sd,
-			struct v4l2_streamparm *param)
-{
-	struct ov2722_device *dev = to_ov2722_sensor(sd);
-	struct i2c_client *client = v4l2_get_subdevdata(sd);
-
-	if (!param)
-		return -EINVAL;
-
-	if (param->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
-		dev_err(&client->dev,  "unsupported buffer type.\n");
-		return -EINVAL;
-	}
-
-	memset(param, 0, sizeof(*param));
-	param->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-
-	if (dev->fmt_idx >= 0 && dev->fmt_idx < N_RES) {
-		param->parm.capture.capability = V4L2_CAP_TIMEPERFRAME;
-		param->parm.capture.timeperframe.numerator = 1;
-		param->parm.capture.capturemode = dev->run_mode;
-		param->parm.capture.timeperframe.denominator =
-			ov2722_res[dev->fmt_idx].fps;
-	}
-	return 0;
-}
-
-static int ov2722_s_parm(struct v4l2_subdev *sd,
-			struct v4l2_streamparm *param)
-{
-	struct ov2722_device *dev = to_ov2722_sensor(sd);
-	dev->run_mode = param->parm.capture.capturemode;
-
-	mutex_lock(&dev->input_lock);
-	switch (dev->run_mode) {
-	case CI_MODE_VIDEO:
-		ov2722_res = ov2722_res_video;
-		N_RES = N_RES_VIDEO;
-		break;
-	case CI_MODE_STILL_CAPTURE:
-		ov2722_res = ov2722_res_still;
-		N_RES = N_RES_STILL;
-		break;
-	default:
-		ov2722_res = ov2722_res_preview;
-		N_RES = N_RES_PREVIEW;
-	}
-	mutex_unlock(&dev->input_lock);
-	return 0;
-}
-
 static int ov2722_g_frame_interval(struct v4l2_subdev *sd,
 				   struct v4l2_subdev_frame_interval *interval)
 {
@@ -1192,8 +1141,6 @@ static const struct v4l2_subdev_sensor_ops ov2722_sensor_ops = {
 
 static const struct v4l2_subdev_video_ops ov2722_video_ops = {
 	.s_stream = ov2722_s_stream,
-	.g_parm = ov2722_g_parm,
-	.s_parm = ov2722_s_parm,
 	.g_frame_interval = ov2722_g_frame_interval,
 };
 
@@ -1259,7 +1206,6 @@ static int ov2722_probe(struct i2c_client *client)
 	struct ov2722_device *dev;
 	void *ovpdev;
 	int ret;
-	struct acpi_device *adev;
 
 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
 	if (!dev)
@@ -1270,14 +1216,9 @@ static int ov2722_probe(struct i2c_client *client)
 	dev->fmt_idx = 0;
 	v4l2_i2c_subdev_init(&(dev->sd), client, &ov2722_ops);
 
-	ovpdev = client->dev.platform_data;
-	adev = ACPI_COMPANION(&client->dev);
-	if (adev) {
-		adev->power.flags.power_resources = 0;
-		ovpdev = gmin_camera_platform_data(&dev->sd,
-						   ATOMISP_INPUT_FORMAT_RAW_10,
-						   atomisp_bayer_order_grbg);
-	}
+	ovpdev = gmin_camera_platform_data(&dev->sd,
+					   ATOMISP_INPUT_FORMAT_RAW_10,
+					   atomisp_bayer_order_grbg);
 
 	ret = ov2722_s_config(&dev->sd, client->irq, ovpdev);
 	if (ret)
@@ -1296,10 +1237,7 @@ static int ov2722_probe(struct i2c_client *client)
 	if (ret)
 		ov2722_remove(client);
 
-	if (ACPI_HANDLE(&client->dev))
-		ret = atomisp_register_i2c_module(&dev->sd, ovpdev, RAW_CAMERA);
-
-	return ret;
+	return atomisp_register_i2c_module(&dev->sd, ovpdev, RAW_CAMERA);
 
 out_ctrl_handler_free:
 	v4l2_ctrl_handler_free(&dev->ctrl_handler);

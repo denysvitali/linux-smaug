@@ -909,35 +909,54 @@ static int shmctl_stat(struct ipc_namespace *ns, int shmid,
 			int cmd, struct shmid64_ds *tbuf)
 {
 	struct shmid_kernel *shp;
-	int result;
+	int id = 0;
 	int err;
 
+	memset(tbuf, 0, sizeof(*tbuf));
+
 	rcu_read_lock();
-	if (cmd == SHM_STAT) {
+	if (cmd == SHM_STAT || cmd == SHM_STAT_ANY) {
 		shp = shm_obtain_object(ns, shmid);
 		if (IS_ERR(shp)) {
 			err = PTR_ERR(shp);
 			goto out_unlock;
 		}
-		result = shp->shm_perm.id;
-	} else {
+		id = shp->shm_perm.id;
+	} else { /* IPC_STAT */
 		shp = shm_obtain_object_check(ns, shmid);
 		if (IS_ERR(shp)) {
 			err = PTR_ERR(shp);
 			goto out_unlock;
 		}
-		result = 0;
 	}
 
-	err = -EACCES;
-	if (ipcperms(ns, &shp->shm_perm, S_IRUGO))
-		goto out_unlock;
+	/*
+	 * Semantically SHM_STAT_ANY ought to be identical to
+	 * that functionality provided by the /proc/sysvipc/
+	 * interface. As such, only audit these calls and
+	 * do not do traditional S_IRUGO permission checks on
+	 * the ipc object.
+	 */
+	if (cmd == SHM_STAT_ANY)
+		audit_ipc_obj(&shp->shm_perm);
+	else {
+		err = -EACCES;
+		if (ipcperms(ns, &shp->shm_perm, S_IRUGO))
+			goto out_unlock;
+	}
 
 	err = security_shm_shmctl(shp, cmd);
 	if (err)
 		goto out_unlock;
 
-	memset(tbuf, 0, sizeof(*tbuf));
+	ipc_lock_object(&shp->shm_perm);
+
+	if (!ipc_valid_object(&shp->shm_perm)) {
+		ipc_unlock_object(&shp->shm_perm);
+		err = -EIDRM;
+		goto out_unlock;
+	}
+
 	kernel_to_ipc64_perm(&shp->shm_perm, &tbuf->shm_perm);
 	tbuf->shm_segsz	= shp->shm_segsz;
 	tbuf->shm_atime	= shp->shm_atim;
@@ -946,8 +965,10 @@ static int shmctl_stat(struct ipc_namespace *ns, int shmid,
 	tbuf->shm_cpid	= shp->shm_cprid;
 	tbuf->shm_lpid	= shp->shm_lprid;
 	tbuf->shm_nattch = shp->shm_nattch;
+
+	ipc_unlock_object(&shp->shm_perm);
 	rcu_read_unlock();
-	return result;
+	return id;
 
 out_unlock:
 	rcu_read_unlock();
@@ -1062,6 +1083,7 @@ SYSCALL_DEFINE3(shmctl, int, shmid, int, cmd, struct shmid_ds __user *, buf)
 		return err;
 	}
 	case SHM_STAT:
+	case SHM_STAT_ANY:
 	case IPC_STAT: {
 		err = shmctl_stat(ns, shmid, cmd, &sem64);
 		if (err < 0)
@@ -1235,6 +1257,7 @@ COMPAT_SYSCALL_DEFINE3(shmctl, int, shmid, int, cmd, void __user *, uptr)
 		return err;
 	}
 	case IPC_STAT:
+	case SHM_STAT_ANY:
 	case SHM_STAT:
 		err = shmctl_stat(ns, shmid, cmd, &sem64);
 		if (err < 0)

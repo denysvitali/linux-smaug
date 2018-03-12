@@ -132,7 +132,7 @@ static int tcf_pedit_key_ex_dump(struct sk_buff *skb,
 
 static int tcf_pedit_init(struct net *net, struct nlattr *nla,
 			  struct nlattr *est, struct tc_action **a,
-			  int ovr, int bind)
+			  int ovr, int bind, struct netlink_ext_ack *extack)
 {
 	struct tc_action_net *tn = net_generic(net, pedit_net_id);
 	struct nlattr *tb[TCA_PEDIT_MAX + 1];
@@ -216,7 +216,7 @@ static int tcf_pedit_init(struct net *net, struct nlattr *nla,
 	return ret;
 }
 
-static void tcf_pedit_cleanup(struct tc_action *a, int bind)
+static void tcf_pedit_cleanup(struct tc_action *a)
 {
 	struct tcf_pedit *p = to_pedit(a);
 	struct tc_pedit_key *keys = p->tcfp_keys;
@@ -419,14 +419,16 @@ nla_put_failure:
 
 static int tcf_pedit_walker(struct net *net, struct sk_buff *skb,
 			    struct netlink_callback *cb, int type,
-			    const struct tc_action_ops *ops)
+			    const struct tc_action_ops *ops,
+			    struct netlink_ext_ack *extack)
 {
 	struct tc_action_net *tn = net_generic(net, pedit_net_id);
 
-	return tcf_generic_walker(tn, skb, cb, type, ops);
+	return tcf_generic_walker(tn, skb, cb, type, ops, extack);
 }
 
-static int tcf_pedit_search(struct net *net, struct tc_action **a, u32 index)
+static int tcf_pedit_search(struct net *net, struct tc_action **a, u32 index,
+			    struct netlink_ext_ack *extack)
 {
 	struct tc_action_net *tn = net_generic(net, pedit_net_id);
 
@@ -453,18 +455,17 @@ static __net_init int pedit_init_net(struct net *net)
 	return tc_action_net_init(tn, &act_pedit_ops);
 }
 
-static void __net_exit pedit_exit_net(struct net *net)
+static void __net_exit pedit_exit_net(struct list_head *net_list)
 {
-	struct tc_action_net *tn = net_generic(net, pedit_net_id);
-
-	tc_action_net_exit(tn);
+	tc_action_net_exit(net_list, pedit_net_id);
 }
 
 static struct pernet_operations pedit_net_ops = {
 	.init = pedit_init_net,
-	.exit = pedit_exit_net,
+	.exit_batch = pedit_exit_net,
 	.id   = &pedit_net_id,
 	.size = sizeof(struct tc_action_net),
+	.async = true,
 };
 
 MODULE_AUTHOR("Jamal Hadi Salim(2002-4)");

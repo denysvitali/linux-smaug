@@ -107,6 +107,8 @@ static ssize_t read_mem(struct file *file, char __user *buf,
 	phys_addr_t p = *ppos;
 	ssize_t read, sz;
 	void *ptr;
+	char *bounce;
+	int err;
 
 	if (p != *ppos)
 		return 0;
@@ -129,15 +131,22 @@ static ssize_t read_mem(struct file *file, char __user *buf,
 	}
 #endif
 
+	bounce = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!bounce)
+		return -ENOMEM;
+
 	while (count > 0) {
 		unsigned long remaining;
 		int allowed;
 
 		sz = size_inside_page(p, count);
 
+		err = -EPERM;
 		allowed = page_is_allowed(p >> PAGE_SHIFT);
 		if (!allowed)
-			return -EPERM;
+			goto failed;
+
+		err = -EFAULT;
 		if (allowed == 2) {
 			/* Show zeros for restricted memory. */
 			remaining = clear_user(buf, sz);
@@ -149,24 +158,32 @@ static ssize_t read_mem(struct file *file, char __user *buf,
 			 */
 			ptr = xlate_dev_mem_ptr(p);
 			if (!ptr)
-				return -EFAULT;
+				goto failed;
 
-			remaining = copy_to_user(buf, ptr, sz);
-
+			err = probe_kernel_read(bounce, ptr, sz);
 			unxlate_dev_mem_ptr(p, ptr);
+			if (err)
+				goto failed;
+
+			remaining = copy_to_user(buf, bounce, sz);
 		}
 
 		if (remaining)
-			return -EFAULT;
+			goto failed;
 
 		buf += sz;
 		p += sz;
 		count -= sz;
 		read += sz;
 	}
+	kfree(bounce);
 
 	*ppos += read;
 	return read;
+
+failed:
+	kfree(bounce);
+	return err;
 }
 
 static ssize_t write_mem(struct file *file, const char __user *buf,
@@ -767,6 +784,8 @@ static loff_t memory_lseek(struct file *file, loff_t offset, int orig)
 
 static int open_port(struct inode *inode, struct file *filp)
 {
+	if (kernel_is_locked_down("/dev/mem,kmem,port"))
+		return -EPERM;
 	return capable(CAP_SYS_RAWIO) ? 0 : -EPERM;
 }
 

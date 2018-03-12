@@ -15,11 +15,11 @@
 #include <linux/pm.h>
 #include <linux/pm_runtime.h>
 #include <linux/init.h>
-#include <linux/pcieport_if.h>
 #include <linux/aer.h>
 #include <linux/dmi.h>
 #include <linux/pci-aspm.h>
 
+#include "../pcieport_if.h"
 #include "../pci.h"
 #include "portdrv.h"
 
@@ -149,6 +149,9 @@ static int pcie_portdrv_probe(struct pci_dev *dev,
 		return status;
 
 	pci_save_state(dev);
+
+	dev_pm_set_driver_flags(&dev->dev, DPM_FLAG_SMART_SUSPEND |
+					   DPM_FLAG_LEAVE_SUSPENDED);
 
 	if (pci_bridge_d3_possible(dev)) {
 		/*

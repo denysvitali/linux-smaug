@@ -51,9 +51,6 @@ extern int proc_dointvec_minmax(struct ctl_table *, int,
 extern int proc_douintvec_minmax(struct ctl_table *table, int write,
 				 void __user *buffer, size_t *lenp,
 				 loff_t *ppos);
-extern int proc_dopipe_max_size(struct ctl_table *table, int write,
-				void __user *buffer, size_t *lenp,
-				loff_t *ppos);
 extern int proc_dointvec_jiffies(struct ctl_table *, int,
 				 void __user *, size_t *, loff_t *);
 extern int proc_dointvec_userhz_jiffies(struct ctl_table *, int,
@@ -119,12 +116,29 @@ struct ctl_table
 	void *data;
 	int maxlen;
 	umode_t mode;
+	uint16_t flags;			/* enum ctl_table_flags */
 	struct ctl_table *child;	/* Deprecated */
 	proc_handler *proc_handler;	/* Callback for text formatting */
 	struct ctl_table_poll *poll;
 	void *extra1;
 	void *extra2;
 } __randomize_layout;
+
+/**
+ * enum ctl_table_flags - flags for the ctl table (struct ctl_table.flags)
+ *
+ * @CTL_FLAGS_CLAMP_RANGE: Set to indicate that the entry should be
+ *	flexibly clamped to min/max range in case the user provided
+ *	an incorrect value.
+ * @CTL_FLAGS_OOR_WARNED: Set to indicate that an out of range warning
+ * 	had been issued for that entry.
+ *
+ * At most 16 different flags will be allowed.
+ */
+enum ctl_table_flags {
+	CTL_FLAGS_CLAMP_RANGE		= BIT(0),
+	CTL_FLAGS_OOR_WARNED		= BIT(1),
+};
 
 struct ctl_node {
 	struct rb_node node;

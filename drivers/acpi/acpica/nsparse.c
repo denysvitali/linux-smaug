@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2017, Intel Corp.
+ * Copyright (C) 2000 - 2018, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -112,8 +112,10 @@ acpi_ns_execute_table(u32 table_index, struct acpi_namespace_node *start_node)
 		goto cleanup;
 	}
 
-	ACPI_DEBUG_PRINT((ACPI_DB_PARSE,
-			  "Create table code block: %p\n", method_obj));
+	ACPI_DEBUG_PRINT_RAW((ACPI_DB_PARSE,
+			      "%s: Create table pseudo-method for [%4.4s] @%p, method %p\n",
+			      ACPI_GET_FUNCTION_NAME, table->signature, table,
+			      method_obj));
 
 	method_obj->method.aml_start = aml_start;
 	method_obj->method.aml_length = aml_length;
@@ -265,7 +267,9 @@ acpi_ns_parse_table(u32 table_index, struct acpi_namespace_node *start_node)
 	ACPI_FUNCTION_TRACE(ns_parse_table);
 
 	if (acpi_gbl_parse_table_as_term_list) {
-		ACPI_DEBUG_PRINT((ACPI_DB_PARSE, "**** Start load pass\n"));
+		ACPI_DEBUG_PRINT_RAW((ACPI_DB_PARSE,
+				      "%s: **** Start table execution pass\n",
+				      ACPI_GET_FUNCTION_NAME));
 
 		status = acpi_ns_execute_table(table_index, start_node);
 		if (ACPI_FAILURE(status)) {

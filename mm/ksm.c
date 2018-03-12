@@ -675,15 +675,8 @@ static struct page *get_ksm_page(struct stable_node *stable_node, bool lock_it)
 	expected_mapping = (void *)((unsigned long)stable_node |
 					PAGE_MAPPING_KSM);
 again:
-	kpfn = READ_ONCE(stable_node->kpfn);
+	kpfn = READ_ONCE(stable_node->kpfn); /* Address dependency. */
 	page = pfn_to_page(kpfn);
-
-	/*
-	 * page is computed from kpfn, so on most architectures reading
-	 * page->mapping is naturally ordered after reading node->kpfn,
-	 * but on Alpha we need to be more careful.
-	 */
-	smp_read_barrier_depends();
 	if (READ_ONCE(page->mapping) != expected_mapping)
 		goto stale;
 
@@ -1325,10 +1318,10 @@ bool is_page_sharing_candidate(struct stable_node *stable_node)
 	return __is_page_sharing_candidate(stable_node, 0);
 }
 
-struct page *stable_node_dup(struct stable_node **_stable_node_dup,
-			     struct stable_node **_stable_node,
-			     struct rb_root *root,
-			     bool prune_stale_stable_nodes)
+static struct page *stable_node_dup(struct stable_node **_stable_node_dup,
+				    struct stable_node **_stable_node,
+				    struct rb_root *root,
+				    bool prune_stale_stable_nodes)
 {
 	struct stable_node *dup, *found = NULL, *stable_node = *_stable_node;
 	struct hlist_node *hlist_safe;
@@ -2309,7 +2302,7 @@ next_mm:
 
 /**
  * ksm_do_scan  - the ksm scanner main worker function.
- * @scan_npages - number of pages we want to scan before we return.
+ * @scan_npages:  number of pages we want to scan before we return.
  */
 static void ksm_do_scan(unsigned int scan_npages)
 {

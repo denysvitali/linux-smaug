@@ -23,6 +23,7 @@
 #include <linux/xattr.h>
 #include <linux/security.h>
 #include <linux/posix_acl_xattr.h>
+#include <linux/iversion.h>
 #include "ctree.h"
 #include "btrfs_inode.h"
 #include "transaction.h"
@@ -32,7 +33,7 @@
 #include "locking.h"
 
 
-ssize_t __btrfs_getxattr(struct inode *inode, const char *name,
+int btrfs_getxattr(struct inode *inode, const char *name,
 				void *buffer, size_t size)
 {
 	struct btrfs_dir_item *di;
@@ -232,7 +233,7 @@ out:
 /*
  * @value: "" makes the attribute to empty, NULL removes it
  */
-int __btrfs_setxattr(struct btrfs_trans_handle *trans,
+int btrfs_setxattr(struct btrfs_trans_handle *trans,
 		     struct inode *inode, const char *name,
 		     const void *value, size_t size, int flags)
 {
@@ -267,7 +268,6 @@ ssize_t btrfs_listxattr(struct dentry *dentry, char *buffer, size_t size)
 {
 	struct btrfs_key key;
 	struct inode *inode = d_inode(dentry);
-	struct btrfs_fs_info *fs_info = btrfs_sb(inode->i_sb);
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct btrfs_path *path;
 	int ret = 0;
@@ -336,11 +336,6 @@ ssize_t btrfs_listxattr(struct dentry *dentry, char *buffer, size_t size)
 			u32 this_len = sizeof(*di) + name_len + data_len;
 			unsigned long name_ptr = (unsigned long)(di + 1);
 
-			if (verify_dir_item(fs_info, leaf, slot, di)) {
-				ret = -EIO;
-				goto err;
-			}
-
 			total_size += name_len + 1;
 			/*
 			 * We are just looking for how big our buffer needs to
@@ -379,7 +374,7 @@ static int btrfs_xattr_handler_get(const struct xattr_handler *handler,
 				   const char *name, void *buffer, size_t size)
 {
 	name = xattr_full_name(handler, name);
-	return __btrfs_getxattr(inode, name, buffer, size);
+	return btrfs_getxattr(inode, name, buffer, size);
 }
 
 static int btrfs_xattr_handler_set(const struct xattr_handler *handler,
@@ -388,7 +383,7 @@ static int btrfs_xattr_handler_set(const struct xattr_handler *handler,
 				   size_t size, int flags)
 {
 	name = xattr_full_name(handler, name);
-	return __btrfs_setxattr(NULL, inode, name, buffer, size, flags);
+	return btrfs_setxattr(NULL, inode, name, buffer, size, flags);
 }
 
 static int btrfs_xattr_handler_set_prop(const struct xattr_handler *handler,
@@ -453,8 +448,8 @@ static int btrfs_initxattrs(struct inode *inode,
 		}
 		strcpy(name, XATTR_SECURITY_PREFIX);
 		strcpy(name + XATTR_SECURITY_PREFIX_LEN, xattr->name);
-		err = __btrfs_setxattr(trans, inode, name,
-				       xattr->value, xattr->value_len, 0);
+		err = btrfs_setxattr(trans, inode, name, xattr->value,
+				xattr->value_len, 0);
 		kfree(name);
 		if (err < 0)
 			break;

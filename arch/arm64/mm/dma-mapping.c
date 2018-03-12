@@ -24,7 +24,7 @@
 #include <linux/export.h>
 #include <linux/slab.h>
 #include <linux/genalloc.h>
-#include <linux/dma-mapping.h>
+#include <linux/dma-direct.h>
 #include <linux/dma-contiguous.h>
 #include <linux/vmalloc.h>
 #include <linux/swiotlb.h>
@@ -33,6 +33,7 @@
 #include <asm/cacheflush.h>
 
 static int swiotlb __ro_after_init;
+DEFINE_STATIC_KEY_FALSE(swiotlb_noncoherent_bounce);
 
 static pgprot_t __get_dma_pgprot(unsigned long attrs, pgprot_t prot,
 				 bool coherent)
@@ -91,46 +92,6 @@ static int __free_from_pool(void *start, size_t size)
 	return 1;
 }
 
-static void *__dma_alloc_coherent(struct device *dev, size_t size,
-				  dma_addr_t *dma_handle, gfp_t flags,
-				  unsigned long attrs)
-{
-	if (IS_ENABLED(CONFIG_ZONE_DMA) &&
-	    dev->coherent_dma_mask <= DMA_BIT_MASK(32))
-		flags |= GFP_DMA;
-	if (dev_get_cma_area(dev) && gfpflags_allow_blocking(flags)) {
-		struct page *page;
-		void *addr;
-
-		page = dma_alloc_from_contiguous(dev, size >> PAGE_SHIFT,
-						 get_order(size), flags);
-		if (!page)
-			return NULL;
-
-		*dma_handle = phys_to_dma(dev, page_to_phys(page));
-		addr = page_address(page);
-		memset(addr, 0, size);
-		return addr;
-	} else {
-		return swiotlb_alloc_coherent(dev, size, dma_handle, flags);
-	}
-}
-
-static void __dma_free_coherent(struct device *dev, size_t size,
-				void *vaddr, dma_addr_t dma_handle,
-				unsigned long attrs)
-{
-	bool freed;
-	phys_addr_t paddr = dma_to_phys(dev, dma_handle);
-
-
-	freed = dma_release_from_contiguous(dev,
-					phys_to_page(paddr),
-					size >> PAGE_SHIFT);
-	if (!freed)
-		swiotlb_free_coherent(dev, size, vaddr, dma_handle);
-}
-
 static void *__dma_alloc(struct device *dev, size_t size,
 			 dma_addr_t *dma_handle, gfp_t flags,
 			 unsigned long attrs)
@@ -152,7 +113,7 @@ static void *__dma_alloc(struct device *dev, size_t size,
 		return addr;
 	}
 
-	ptr = __dma_alloc_coherent(dev, size, dma_handle, flags, attrs);
+	ptr = swiotlb_alloc(dev, size, dma_handle, flags, attrs);
 	if (!ptr)
 		goto no_mem;
 
@@ -173,7 +134,7 @@ static void *__dma_alloc(struct device *dev, size_t size,
 	return coherent_ptr;
 
 no_map:
-	__dma_free_coherent(dev, size, ptr, *dma_handle, attrs);
+	swiotlb_free(dev, size, ptr, *dma_handle, attrs);
 no_mem:
 	return NULL;
 }
@@ -191,7 +152,7 @@ static void __dma_free(struct device *dev, size_t size,
 			return;
 		vunmap(vaddr);
 	}
-	__dma_free_coherent(dev, size, swiotlb_addr, dma_handle, attrs);
+	swiotlb_free(dev, size, swiotlb_addr, dma_handle, attrs);
 }
 
 static dma_addr_t __swiotlb_map_page(struct device *dev, struct page *page,
@@ -368,7 +329,7 @@ static int __swiotlb_dma_mapping_error(struct device *hwdev, dma_addr_t addr)
 	return 0;
 }
 
-static const struct dma_map_ops swiotlb_dma_ops = {
+static const struct dma_map_ops arm64_swiotlb_dma_ops = {
 	.alloc = __dma_alloc,
 	.free = __dma_free,
 	.mmap = __swiotlb_mmap,
@@ -397,7 +358,7 @@ static int __init atomic_pool_init(void)
 		page = dma_alloc_from_contiguous(NULL, nr_pages,
 						 pool_size_order, GFP_KERNEL);
 	else
-		page = alloc_pages(GFP_DMA, pool_size_order);
+		page = alloc_pages(GFP_DMA32, pool_size_order);
 
 	if (page) {
 		int ret;
@@ -543,6 +504,14 @@ static int __init arm64_dma_init(void)
 	if (swiotlb_force == SWIOTLB_FORCE ||
 	    max_pfn > (arm64_dma_phys_limit >> PAGE_SHIFT))
 		swiotlb = 1;
+
+	if (WARN_TAINT(ARCH_DMA_MINALIGN < cache_line_size(),
+		       TAINT_CPU_OUT_OF_SPEC,
+		       "ARCH_DMA_MINALIGN smaller than CTR_EL0.CWG (%d < %d)",
+		       ARCH_DMA_MINALIGN, cache_line_size())) {
+		swiotlb = 1;
+		static_branch_enable(&swiotlb_noncoherent_bounce);
+	}
 
 	return atomic_pool_init();
 }
@@ -922,8 +891,16 @@ static void __iommu_setup_dma_ops(struct device *dev, u64 dma_base, u64 size,
 void arch_setup_dma_ops(struct device *dev, u64 dma_base, u64 size,
 			const struct iommu_ops *iommu, bool coherent)
 {
+	/*
+	 * Enable swiotlb for buffer bouncing if ARCH_DMA_MINALIGN < CWG.
+	 * dma_capable() forces the actual bounce if the device is
+	 * non-coherent.
+	 */
+	if (static_branch_unlikely(&swiotlb_noncoherent_bounce) && !coherent)
+		iommu = NULL;
+
 	if (!dev->dma_ops)
-		dev->dma_ops = &swiotlb_dma_ops;
+		dev->dma_ops = &arm64_swiotlb_dma_ops;
 
 	dev->archdata.dma_coherent = coherent;
 	__iommu_setup_dma_ops(dev, dma_base, size, iommu);

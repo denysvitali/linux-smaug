@@ -43,6 +43,7 @@
 #include <linux/uuid.h>
 #include <linux/btrfs.h>
 #include <linux/uaccess.h>
+#include <linux/iversion.h>
 #include "ctree.h"
 #include "disk-io.h"
 #include "transaction.h"
@@ -163,9 +164,15 @@ void btrfs_update_iflags(struct inode *inode)
 		new_fl |= S_NOATIME;
 	if (ip->flags & BTRFS_INODE_DIRSYNC)
 		new_fl |= S_DIRSYNC;
+	/*
+	 * The btree_inode will be always in the root cgroup. The cgroup
+	 * writeback can be enabled on regular inodes selectively.
+	 */
+	new_fl |= S_CGROUPWB;
 
 	set_mask_bits(&inode->i_flags,
-		      S_SYNC | S_APPEND | S_IMMUTABLE | S_NOATIME | S_DIRSYNC,
+		      S_SYNC | S_APPEND | S_IMMUTABLE | S_NOATIME | S_DIRSYNC |
+		      S_CGROUPWB,
 		      new_fl);
 }
 
@@ -307,12 +314,10 @@ static int btrfs_ioctl_setflags(struct file *file, void __user *arg)
 		ip->flags |= BTRFS_INODE_COMPRESS;
 		ip->flags &= ~BTRFS_INODE_NOCOMPRESS;
 
-		if (fs_info->compress_type == BTRFS_COMPRESS_LZO)
-			comp = "lzo";
-		else if (fs_info->compress_type == BTRFS_COMPRESS_ZLIB)
-			comp = "zlib";
-		else
-			comp = "zstd";
+		comp = btrfs_compress_type2str(fs_info->compress_type);
+		if (!comp || comp[0] == 0)
+			comp = btrfs_compress_type2str(BTRFS_COMPRESS_ZLIB);
+
 		ret = btrfs_set_prop(inode, "btrfs.compression",
 				     comp, strlen(comp), 0);
 		if (ret)
@@ -979,7 +984,7 @@ static struct extent_map *defrag_lookup_extent(struct inode *inode, u64 start)
 		/* get the big lock and read metadata off disk */
 		lock_extent_bits(io_tree, start, end, &cached);
 		em = btrfs_get_extent(BTRFS_I(inode), NULL, 0, start, len, 0);
-		unlock_extent_cached(io_tree, start, end, &cached, GFP_NOFS);
+		unlock_extent_cached(io_tree, start, end, &cached);
 
 		if (IS_ERR(em))
 			return NULL;
@@ -1130,7 +1135,7 @@ again:
 			ordered = btrfs_lookup_ordered_extent(inode,
 							      page_start);
 			unlock_extent_cached(tree, page_start, page_end,
-					     &cached_state, GFP_NOFS);
+					     &cached_state);
 			if (!ordered)
 				break;
 
@@ -1190,7 +1195,7 @@ again:
 	clear_extent_bit(&BTRFS_I(inode)->io_tree, page_start,
 			  page_end - 1, EXTENT_DIRTY | EXTENT_DELALLOC |
 			  EXTENT_DO_ACCOUNTING | EXTENT_DEFRAG, 0, 0,
-			  &cached_state, GFP_NOFS);
+			  &cached_state);
 
 	if (i_done != page_cnt) {
 		spin_lock(&BTRFS_I(inode)->lock);
@@ -1198,7 +1203,7 @@ again:
 		spin_unlock(&BTRFS_I(inode)->lock);
 		btrfs_delalloc_release_space(inode, data_reserved,
 				start_index << PAGE_SHIFT,
-				(page_cnt - i_done) << PAGE_SHIFT);
+				(page_cnt - i_done) << PAGE_SHIFT, true);
 	}
 
 
@@ -1206,8 +1211,7 @@ again:
 			  &cached_state);
 
 	unlock_extent_cached(&BTRFS_I(inode)->io_tree,
-			     page_start, page_end - 1, &cached_state,
-			     GFP_NOFS);
+			     page_start, page_end - 1, &cached_state);
 
 	for (i = 0; i < i_done; i++) {
 		clear_page_dirty_for_io(pages[i]);
@@ -1217,7 +1221,8 @@ again:
 		unlock_page(pages[i]);
 		put_page(pages[i]);
 	}
-	btrfs_delalloc_release_extents(BTRFS_I(inode), page_cnt << PAGE_SHIFT);
+	btrfs_delalloc_release_extents(BTRFS_I(inode), page_cnt << PAGE_SHIFT,
+				       false);
 	extent_changeset_free(data_reserved);
 	return i_done;
 out:
@@ -1227,8 +1232,9 @@ out:
 	}
 	btrfs_delalloc_release_space(inode, data_reserved,
 			start_index << PAGE_SHIFT,
-			page_cnt << PAGE_SHIFT);
-	btrfs_delalloc_release_extents(BTRFS_I(inode), page_cnt << PAGE_SHIFT);
+			page_cnt << PAGE_SHIFT, true);
+	btrfs_delalloc_release_extents(BTRFS_I(inode), page_cnt << PAGE_SHIFT,
+				       true);
 	extent_changeset_free(data_reserved);
 	return ret;
 
@@ -1503,7 +1509,7 @@ static noinline int btrfs_ioctl_resize(struct file *file,
 		goto out_free;
 	}
 
-	if (!device->writeable) {
+	if (!test_bit(BTRFS_DEV_STATE_WRITEABLE, &device->dev_state)) {
 		btrfs_info(fs_info,
 			   "resizer unable to apply on readonly device %llu",
 		       devid);
@@ -1528,7 +1534,7 @@ static noinline int btrfs_ioctl_resize(struct file *file,
 		}
 	}
 
-	if (device->is_tgtdev_for_dev_replace) {
+	if (test_bit(BTRFS_DEV_STATE_REPLACE_TGT, &device->dev_state)) {
 		ret = -EPERM;
 		goto out_free;
 	}
@@ -1760,6 +1766,7 @@ static noinline int btrfs_ioctl_subvol_setflags(struct file *file,
 	struct btrfs_trans_handle *trans;
 	u64 root_flags;
 	u64 flags;
+	bool clear_received_uuid = false;
 	int ret = 0;
 
 	if (!inode_owner_or_capable(inode))
@@ -1809,6 +1816,7 @@ static noinline int btrfs_ioctl_subvol_setflags(struct file *file,
 			btrfs_set_root_flags(&root->root_item,
 				     root_flags & ~BTRFS_ROOT_SUBVOL_RDONLY);
 			spin_unlock(&root->root_item_lock);
+			clear_received_uuid = true;
 		} else {
 			spin_unlock(&root->root_item_lock);
 			btrfs_warn(fs_info,
@@ -1823,6 +1831,24 @@ static noinline int btrfs_ioctl_subvol_setflags(struct file *file,
 	if (IS_ERR(trans)) {
 		ret = PTR_ERR(trans);
 		goto out_reset;
+	}
+
+	if (clear_received_uuid) {
+	        if (!btrfs_is_empty_uuid(root->root_item.received_uuid)) {
+	                ret = btrfs_uuid_tree_rem(trans, fs_info,
+	                                root->root_item.received_uuid,
+	                                BTRFS_UUID_KEY_RECEIVED_SUBVOL,
+	                                root->root_key.objectid);
+
+	                if (ret && ret != -ENOENT) {
+	                        btrfs_abort_transaction(trans, ret);
+	                        btrfs_end_transaction(trans);
+	                        goto out_reset;
+	                }
+
+	                memset(root->root_item.received_uuid, 0,
+	                                BTRFS_UUID_SIZE);
+	        }
 	}
 
 	ret = btrfs_update_root(trans, fs_info->tree_root,
@@ -2602,7 +2628,7 @@ static int btrfs_ioctl_defrag(struct file *file, void __user *argp)
 			range->len = (u64)-1;
 		}
 		ret = btrfs_defrag_file(file_inode(file), file,
-					range, 0, 0);
+					range, BTRFS_OLDEST_GENERATION, 0);
 		if (ret > 0)
 			ret = 0;
 		kfree(range);
@@ -2675,14 +2701,12 @@ static long btrfs_ioctl_rm_dev_v2(struct file *file, void __user *arg)
 		goto out;
 	}
 
-	mutex_lock(&fs_info->volume_mutex);
 	if (vol_args->flags & BTRFS_DEVICE_SPEC_BY_ID) {
 		ret = btrfs_rm_device(fs_info, NULL, vol_args->devid);
 	} else {
 		vol_args->name[BTRFS_SUBVOL_NAME_MAX] = '\0';
 		ret = btrfs_rm_device(fs_info, vol_args->name, 0);
 	}
-	mutex_unlock(&fs_info->volume_mutex);
 	clear_bit(BTRFS_FS_EXCL_OP, &fs_info->flags);
 
 	if (!ret) {
@@ -2726,9 +2750,7 @@ static long btrfs_ioctl_rm_dev(struct file *file, void __user *arg)
 	}
 
 	vol_args->name[BTRFS_PATH_NAME_MAX] = '\0';
-	mutex_lock(&fs_info->volume_mutex);
 	ret = btrfs_rm_device(fs_info, vol_args->name, 0);
-	mutex_unlock(&fs_info->volume_mutex);
 
 	if (!ret)
 		btrfs_info(fs_info, "disk deleted %s", vol_args->name);
@@ -2753,16 +2775,16 @@ static long btrfs_ioctl_fs_info(struct btrfs_fs_info *fs_info,
 	if (!fi_args)
 		return -ENOMEM;
 
-	mutex_lock(&fs_devices->device_list_mutex);
+	rcu_read_lock();
 	fi_args->num_devices = fs_devices->num_devices;
-	memcpy(&fi_args->fsid, fs_info->fsid, sizeof(fi_args->fsid));
 
-	list_for_each_entry(device, &fs_devices->devices, dev_list) {
+	list_for_each_entry_rcu(device, &fs_devices->devices, dev_list) {
 		if (device->devid > fi_args->max_id)
 			fi_args->max_id = device->devid;
 	}
-	mutex_unlock(&fs_devices->device_list_mutex);
+	rcu_read_unlock();
 
+	memcpy(&fi_args->fsid, fs_info->fsid, sizeof(fi_args->fsid));
 	fi_args->nodesize = fs_info->nodesize;
 	fi_args->sectorsize = fs_info->sectorsize;
 	fi_args->clone_alignment = fs_info->sectorsize;
@@ -2779,7 +2801,6 @@ static long btrfs_ioctl_dev_info(struct btrfs_fs_info *fs_info,
 {
 	struct btrfs_ioctl_dev_info_args *di_args;
 	struct btrfs_device *dev;
-	struct btrfs_fs_devices *fs_devices = fs_info->fs_devices;
 	int ret = 0;
 	char *s_uuid = NULL;
 
@@ -2790,7 +2811,7 @@ static long btrfs_ioctl_dev_info(struct btrfs_fs_info *fs_info,
 	if (!btrfs_is_empty_uuid(di_args->uuid))
 		s_uuid = di_args->uuid;
 
-	mutex_lock(&fs_devices->device_list_mutex);
+	rcu_read_lock();
 	dev = btrfs_find_device(fs_info, di_args->devid, s_uuid, NULL);
 
 	if (!dev) {
@@ -2805,17 +2826,15 @@ static long btrfs_ioctl_dev_info(struct btrfs_fs_info *fs_info,
 	if (dev->name) {
 		struct rcu_string *name;
 
-		rcu_read_lock();
 		name = rcu_dereference(dev->name);
-		strncpy(di_args->path, name->str, sizeof(di_args->path));
-		rcu_read_unlock();
+		strncpy(di_args->path, name->str, sizeof(di_args->path) - 1);
 		di_args->path[sizeof(di_args->path) - 1] = 0;
 	} else {
 		di_args->path[0] = '\0';
 	}
 
 out:
-	mutex_unlock(&fs_devices->device_list_mutex);
+	rcu_read_unlock();
 	if (ret == 0 && copy_to_user(arg, di_args, sizeof(*di_args)))
 		ret = -EFAULT;
 
@@ -3945,73 +3964,6 @@ int btrfs_clone_file_range(struct file *src_file, loff_t off,
 	return btrfs_clone_files(dst_file, src_file, off, len, destoff);
 }
 
-/*
- * there are many ways the trans_start and trans_end ioctls can lead
- * to deadlocks.  They should only be used by applications that
- * basically own the machine, and have a very in depth understanding
- * of all the possible deadlocks and enospc problems.
- */
-static long btrfs_ioctl_trans_start(struct file *file)
-{
-	struct inode *inode = file_inode(file);
-	struct btrfs_fs_info *fs_info = btrfs_sb(inode->i_sb);
-	struct btrfs_root *root = BTRFS_I(inode)->root;
-	struct btrfs_trans_handle *trans;
-	struct btrfs_file_private *private;
-	int ret;
-	static bool warned = false;
-
-	ret = -EPERM;
-	if (!capable(CAP_SYS_ADMIN))
-		goto out;
-
-	if (!warned) {
-		btrfs_warn(fs_info,
-			"Userspace transaction mechanism is considered "
-			"deprecated and slated to be removed in 4.17. "
-			"If you have a valid use case please "
-			"speak up on the mailing list");
-		WARN_ON(1);
-		warned = true;
-	}
-
-	ret = -EINPROGRESS;
-	private = file->private_data;
-	if (private && private->trans)
-		goto out;
-	if (!private) {
-		private = kzalloc(sizeof(struct btrfs_file_private),
-				  GFP_KERNEL);
-		if (!private)
-			return -ENOMEM;
-		file->private_data = private;
-	}
-
-	ret = -EROFS;
-	if (btrfs_root_readonly(root))
-		goto out;
-
-	ret = mnt_want_write_file(file);
-	if (ret)
-		goto out;
-
-	atomic_inc(&fs_info->open_ioctl_trans);
-
-	ret = -ENOMEM;
-	trans = btrfs_start_ioctl_transaction(root);
-	if (IS_ERR(trans))
-		goto out_drop;
-
-	private->trans = trans;
-	return 0;
-
-out_drop:
-	atomic_dec(&fs_info->open_ioctl_trans);
-	mnt_drop_write_file(file);
-out:
-	return ret;
-}
-
 static long btrfs_ioctl_default_subvol(struct file *file, void __user *argp)
 {
 	struct inode *inode = file_inode(file);
@@ -4253,30 +4205,6 @@ out:
 	return ret;
 }
 
-/*
- * there are many ways the trans_start and trans_end ioctls can lead
- * to deadlocks.  They should only be used by applications that
- * basically own the machine, and have a very in depth understanding
- * of all the possible deadlocks and enospc problems.
- */
-long btrfs_ioctl_trans_end(struct file *file)
-{
-	struct inode *inode = file_inode(file);
-	struct btrfs_root *root = BTRFS_I(inode)->root;
-	struct btrfs_file_private *private = file->private_data;
-
-	if (!private || !private->trans)
-		return -EINVAL;
-
-	btrfs_end_transaction(private->trans);
-	private->trans = NULL;
-
-	atomic_dec(&root->fs_info->open_ioctl_trans);
-
-	mnt_drop_write_file(file);
-	return 0;
-}
-
 static noinline long btrfs_ioctl_start_sync(struct btrfs_root *root,
 					    void __user *argp)
 {
@@ -4438,7 +4366,8 @@ static long btrfs_ioctl_dev_replace(struct btrfs_fs_info *fs_info,
 		ret = 0;
 		break;
 	case BTRFS_IOCTL_DEV_REPLACE_CMD_CANCEL:
-		ret = btrfs_dev_replace_cancel(fs_info, p);
+		p->result = btrfs_dev_replace_cancel(fs_info);
+		ret = 0;
 		break;
 	default:
 		ret = -EINVAL;
@@ -5583,10 +5512,6 @@ long btrfs_ioctl(struct file *file, unsigned int
 		return btrfs_ioctl_dev_info(fs_info, argp);
 	case BTRFS_IOC_BALANCE:
 		return btrfs_ioctl_balance(file, NULL);
-	case BTRFS_IOC_TRANS_START:
-		return btrfs_ioctl_trans_start(file);
-	case BTRFS_IOC_TRANS_END:
-		return btrfs_ioctl_trans_end(file);
 	case BTRFS_IOC_TREE_SEARCH:
 		return btrfs_ioctl_tree_search(file, argp);
 	case BTRFS_IOC_TREE_SEARCH_V2:

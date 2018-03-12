@@ -206,9 +206,9 @@ inline void flush_dcache_page_impl(struct page *page)
 #ifdef DCACHE_ALIASING_POSSIBLE
 	__flush_dcache_page(page_address(page),
 			    ((tlb_type == spitfire) &&
-			     page_mapping(page) != NULL));
+			     page_mapping_file(page) != NULL));
 #else
-	if (page_mapping(page) != NULL &&
+	if (page_mapping_file(page) != NULL &&
 	    tlb_type == spitfire)
 		__flush_icache_page(__pa(page_address(page)));
 #endif
@@ -490,7 +490,7 @@ void flush_dcache_page(struct page *page)
 
 	this_cpu = get_cpu();
 
-	mapping = page_mapping(page);
+	mapping = page_mapping_file(page);
 	if (mapping && !mapping_mapped(mapping)) {
 		int dirty = test_bit(PG_dcache_dirty, &page->flags);
 		if (dirty) {
@@ -2628,7 +2628,7 @@ EXPORT_SYMBOL(_PAGE_CACHE);
 
 #ifdef CONFIG_SPARSEMEM_VMEMMAP
 int __meminit vmemmap_populate(unsigned long vstart, unsigned long vend,
-			       int node)
+			       int node, struct vmem_altmap *altmap)
 {
 	unsigned long pte_base;
 
@@ -2671,7 +2671,8 @@ int __meminit vmemmap_populate(unsigned long vstart, unsigned long vend,
 	return 0;
 }
 
-void vmemmap_free(unsigned long start, unsigned long end)
+void vmemmap_free(unsigned long start, unsigned long end,
+		struct vmem_altmap *altmap)
 {
 }
 #endif /* CONFIG_SPARSEMEM_VMEMMAP */
@@ -3088,6 +3089,20 @@ static struct resource bss_resource = {
 	.flags	= IORESOURCE_BUSY | IORESOURCE_SYSTEM_RAM
 };
 
+static struct resource system_rom_resource = {
+	.name	= "System ROM",
+	.start  = 0xf0000,
+	.end    = 0xfffff,
+	.flags	= IORESOURCE_BUSY | IORESOURCE_MEM,
+};
+
+static struct resource video_rom_resource = {
+	.name	= "Video ROM",
+	.start  = 0xc0000,
+	.end    = 0xc7fff,
+	.flags	= IORESOURCE_BUSY | IORESOURCE_MEM,
+};
+
 static inline resource_size_t compute_kern_paddr(void *addr)
 {
 	return (resource_size_t) (addr - KERNBASE + kern_base);
@@ -3132,6 +3147,9 @@ static int __init report_memory(void)
 		insert_resource(res, &data_resource);
 		insert_resource(res, &bss_resource);
 	}
+
+	request_resource(&iomem_resource, &system_rom_resource);
+	request_resource(&iomem_resource, &video_rom_resource);
 
 	return 0;
 }

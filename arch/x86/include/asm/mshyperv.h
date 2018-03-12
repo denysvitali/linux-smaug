@@ -160,6 +160,7 @@ static inline void vmbus_signal_eom(struct hv_message *msg, u32 old_msg_type)
 #define hv_set_synint_state(int_num, val) wrmsrl(int_num, val)
 
 void hyperv_callback_vector(void);
+void hyperv_reenlightenment_vector(void);
 #ifdef CONFIG_TRACING
 #define trace_hyperv_callback_vector hyperv_callback_vector
 #endif
@@ -171,6 +172,19 @@ void hv_setup_kexec_handler(void (*handler)(void));
 void hv_remove_kexec_handler(void);
 void hv_setup_crash_handler(void (*handler)(struct pt_regs *regs));
 void hv_remove_crash_handler(void);
+
+/*
+ * Routines for stimer0 Direct Mode handling.
+ * On x86/x64, there are no percpu actions to take.
+ */
+void hv_stimer0_vector_handler(struct pt_regs *regs);
+void hv_stimer0_callback_vector(void);
+int hv_setup_stimer0_irq(int *irq, int *vector, void (*handler)(void));
+void hv_remove_stimer0_irq(int irq);
+
+static inline void hv_enable_stimer0_percpu_irq(int irq) {}
+static inline void hv_disable_stimer0_percpu_irq(int irq) {}
+
 
 #if IS_ENABLED(CONFIG_HYPERV)
 extern struct clocksource *hyperv_cs;
@@ -314,20 +328,29 @@ void hyperv_init(void);
 void hyperv_setup_mmu_ops(void);
 void hyper_alloc_mmu(void);
 void hyperv_report_panic(struct pt_regs *regs, long err);
-bool hv_is_hypercall_page_setup(void);
+bool hv_is_hyperv_initialized(void);
 void hyperv_cleanup(void);
+
+void hyperv_reenlightenment_intr(struct pt_regs *regs);
+void set_hv_tscchange_cb(void (*cb)(void));
+void clear_hv_tscchange_cb(void);
+void hyperv_stop_tsc_emulation(void);
 #else /* CONFIG_HYPERV */
 static inline void hyperv_init(void) {}
-static inline bool hv_is_hypercall_page_setup(void) { return false; }
+static inline bool hv_is_hyperv_initialized(void) { return false; }
 static inline void hyperv_cleanup(void) {}
 static inline void hyperv_setup_mmu_ops(void) {}
+static inline void set_hv_tscchange_cb(void (*cb)(void)) {}
+static inline void clear_hv_tscchange_cb(void) {}
+static inline void hyperv_stop_tsc_emulation(void) {};
 #endif /* CONFIG_HYPERV */
 
 #ifdef CONFIG_HYPERV_TSCPAGE
 struct ms_hyperv_tsc_page *hv_get_tsc_page(void);
-static inline u64 hv_read_tsc_page(const struct ms_hyperv_tsc_page *tsc_pg)
+static inline u64 hv_read_tsc_page_tsc(const struct ms_hyperv_tsc_page *tsc_pg,
+				       u64 *cur_tsc)
 {
-	u64 scale, offset, cur_tsc;
+	u64 scale, offset;
 	u32 sequence;
 
 	/*
@@ -358,7 +381,7 @@ static inline u64 hv_read_tsc_page(const struct ms_hyperv_tsc_page *tsc_pg)
 
 		scale = READ_ONCE(tsc_pg->tsc_scale);
 		offset = READ_ONCE(tsc_pg->tsc_offset);
-		cur_tsc = rdtsc_ordered();
+		*cur_tsc = rdtsc_ordered();
 
 		/*
 		 * Make sure we read sequence after we read all other values
@@ -368,13 +391,27 @@ static inline u64 hv_read_tsc_page(const struct ms_hyperv_tsc_page *tsc_pg)
 
 	} while (READ_ONCE(tsc_pg->tsc_sequence) != sequence);
 
-	return mul_u64_u64_shr(cur_tsc, scale, 64) + offset;
+	return mul_u64_u64_shr(*cur_tsc, scale, 64) + offset;
+}
+
+static inline u64 hv_read_tsc_page(const struct ms_hyperv_tsc_page *tsc_pg)
+{
+	u64 cur_tsc;
+
+	return hv_read_tsc_page_tsc(tsc_pg, &cur_tsc);
 }
 
 #else
 static inline struct ms_hyperv_tsc_page *hv_get_tsc_page(void)
 {
 	return NULL;
+}
+
+static inline u64 hv_read_tsc_page_tsc(const struct ms_hyperv_tsc_page *tsc_pg,
+				       u64 *cur_tsc)
+{
+	BUG();
+	return U64_MAX;
 }
 #endif
 #endif

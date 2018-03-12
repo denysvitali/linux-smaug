@@ -1054,7 +1054,6 @@ static int nful_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations nful_file_ops = {
-	.owner	 = THIS_MODULE,
 	.open	 = nful_open,
 	.read	 = seq_read,
 	.llseek	 = seq_lseek,
@@ -1109,6 +1108,7 @@ static struct pernet_operations nfnl_log_net_ops = {
 	.exit	= nfnl_log_net_exit,
 	.id	= &nfnl_log_net_id,
 	.size	= sizeof(struct nfnl_log_net),
+	.async	= true,
 };
 
 static int __init nfnetlink_log_init(void)

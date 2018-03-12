@@ -133,7 +133,6 @@ blk_status_t btrfs_wq_submit_bio(struct btrfs_fs_info *fs_info, struct bio *bio,
 			u64 bio_offset, void *private_data,
 			extent_submit_bio_hook_t *submit_bio_start,
 			extent_submit_bio_hook_t *submit_bio_done);
-unsigned long btrfs_async_submit_limit(struct btrfs_fs_info *info);
 int btrfs_write_tree_block(struct extent_buffer *buf);
 void btrfs_wait_tree_block_writeback(struct extent_buffer *buf);
 int btrfs_init_log_root_tree(struct btrfs_trans_handle *trans,
@@ -149,9 +148,12 @@ struct btrfs_root *btrfs_create_tree(struct btrfs_trans_handle *trans,
 				     u64 objectid);
 int btree_lock_page_hook(struct page *page, void *data,
 				void (*flush_fn)(void *));
+struct extent_map *btree_get_extent(struct btrfs_inode *inode,
+		struct page *page, size_t pg_offset, u64 start, u64 len,
+		int create);
 int btrfs_get_num_tolerated_disk_barrier_failures(u64 flags);
 int __init btrfs_end_io_wq_init(void);
-void btrfs_end_io_wq_exit(void);
+void __cold btrfs_end_io_wq_exit(void);
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 void btrfs_init_lockdep(void);

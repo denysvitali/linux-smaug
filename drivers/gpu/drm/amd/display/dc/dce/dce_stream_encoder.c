@@ -300,6 +300,8 @@ static void dce110_stream_encoder_dp_set_stream_attribute(
 	uint32_t h_back_porch;
 	uint8_t synchronous_clock = 0; /* asynchronous mode */
 	uint8_t colorimetry_bpc;
+	uint8_t dynamic_range_rgb = 0; /*full range*/
+	uint8_t dynamic_range_ycbcr = 1; /*bt709*/
 #endif
 
 	struct dce110_stream_encoder *enc110 = DCE110STRENC_FROM_STRENC(enc);
@@ -380,11 +382,7 @@ static void dce110_stream_encoder_dp_set_stream_attribute(
 	}
 
 	/* set dynamic range and YCbCr range */
-	if (enc110->se_mask->DP_DYN_RANGE && enc110->se_mask->DP_YCBCR_RANGE)
-		REG_UPDATE_2(
-			DP_PIXEL_FORMAT,
-			DP_DYN_RANGE, 0,
-			DP_YCBCR_RANGE, 0);
+
 
 #if defined(CONFIG_DRM_AMD_DC_DCN1_0)
 	switch (crtc_timing->display_color_depth) {
@@ -413,37 +411,57 @@ static void dce110_stream_encoder_dp_set_stream_attribute(
 		case COLOR_SPACE_SRGB:
 			misc0 = misc0 | 0x0;
 			misc1 = misc1 & ~0x80; /* bit7 = 0*/
+			dynamic_range_rgb = 0; /*full range*/
 			break;
 		case COLOR_SPACE_SRGB_LIMITED:
 			misc0 = misc0 | 0x8; /* bit3=1 */
 			misc1 = misc1 & ~0x80; /* bit7 = 0*/
+			dynamic_range_rgb = 1; /*limited range*/
 			break;
 		case COLOR_SPACE_YCBCR601:
+		case COLOR_SPACE_YCBCR601_LIMITED:
 			misc0 = misc0 | 0x8; /* bit3=1, bit4=0 */
 			misc1 = misc1 & ~0x80; /* bit7 = 0*/
+			dynamic_range_ycbcr = 0; /*bt601*/
 			if (crtc_timing->pixel_encoding == PIXEL_ENCODING_YCBCR422)
 				misc0 = misc0 | 0x2; /* bit2=0, bit1=1 */
 			else if (crtc_timing->pixel_encoding == PIXEL_ENCODING_YCBCR444)
 				misc0 = misc0 | 0x4; /* bit2=1, bit1=0 */
 			break;
 		case COLOR_SPACE_YCBCR709:
+		case COLOR_SPACE_YCBCR709_LIMITED:
 			misc0 = misc0 | 0x18; /* bit3=1, bit4=1 */
 			misc1 = misc1 & ~0x80; /* bit7 = 0*/
+			dynamic_range_ycbcr = 1; /*bt709*/
 			if (crtc_timing->pixel_encoding == PIXEL_ENCODING_YCBCR422)
 				misc0 = misc0 | 0x2; /* bit2=0, bit1=1 */
 			else if (crtc_timing->pixel_encoding == PIXEL_ENCODING_YCBCR444)
 				misc0 = misc0 | 0x4; /* bit2=1, bit1=0 */
 			break;
-		case COLOR_SPACE_2020_RGB_FULLRANGE:
 		case COLOR_SPACE_2020_RGB_LIMITEDRANGE:
+			dynamic_range_rgb = 1; /*limited range*/
+			break;
+		case COLOR_SPACE_2020_RGB_FULLRANGE:
 		case COLOR_SPACE_2020_YCBCR:
+		case COLOR_SPACE_XR_RGB:
+		case COLOR_SPACE_MSREF_SCRGB:
 		case COLOR_SPACE_ADOBERGB:
+		case COLOR_SPACE_DCIP3:
+		case COLOR_SPACE_XV_YCC_709:
+		case COLOR_SPACE_XV_YCC_601:
+		case COLOR_SPACE_DISPLAYNATIVE:
+		case COLOR_SPACE_DOLBYVISION:
+		case COLOR_SPACE_APPCTRL:
+		case COLOR_SPACE_CUSTOMPOINTS:
 		case COLOR_SPACE_UNKNOWN:
-		case COLOR_SPACE_YCBCR601_LIMITED:
-		case COLOR_SPACE_YCBCR709_LIMITED:
 			/* do nothing */
 			break;
 		}
+		if (enc110->se_mask->DP_DYN_RANGE && enc110->se_mask->DP_YCBCR_RANGE)
+			REG_UPDATE_2(
+				DP_PIXEL_FORMAT,
+				DP_DYN_RANGE, dynamic_range_rgb,
+				DP_YCBCR_RANGE, dynamic_range_ycbcr);
 
 #if defined(CONFIG_DRM_AMD_DC_DCN1_0)
 		if (REG(DP_MSA_COLORIMETRY))
@@ -902,6 +920,7 @@ static void dce110_stream_encoder_dp_blank(
 {
 	struct dce110_stream_encoder *enc110 = DCE110STRENC_FROM_STRENC(enc);
 	uint32_t retries = 0;
+	uint32_t  reg1 = 0;
 	uint32_t max_retries = DP_BLANK_MAX_RETRY * 10;
 
 	/* Note: For CZ, we are changing driver default to disable
@@ -910,7 +929,10 @@ static void dce110_stream_encoder_dp_blank(
 	 * handful of panels that cannot handle disable stream at
 	 * HBLANK and will result in a white line flash across the
 	 * screen on stream disable. */
-
+	REG_GET(DP_VID_STREAM_CNTL, DP_VID_STREAM_ENABLE, &reg1);
+	if ((reg1 & 0x1) == 0)
+		/*stream not enabled*/
+		return;
 	/* Specify the video stream disable point
 	 * (2 = start of the next vertical blank) */
 	REG_UPDATE(DP_VID_STREAM_CNTL, DP_VID_STREAM_DIS_DEFER, 2);

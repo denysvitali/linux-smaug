@@ -6,7 +6,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2017, Intel Corp.
+ * Copyright (C) 2000 - 2018, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -576,8 +576,10 @@ acpi_status acpi_ds_exec_end_op(struct acpi_walk_state *walk_state)
 		case AML_TYPE_CREATE_OBJECT:
 
 			ACPI_DEBUG_PRINT((ACPI_DB_EXEC,
-					  "Executing CreateObject (Buffer/Package) Op=%p AMLPtr=%p\n",
-					  op, op->named.data));
+					  "Executing CreateObject (Buffer/Package) Op=%p Child=%p ParentOpcode=%4.4X\n",
+					  op, op->named.value.arg,
+					  op->common.parent->common.
+					  aml_opcode));
 
 			switch (op->common.parent->common.aml_opcode) {
 			case AML_NAME_OP:

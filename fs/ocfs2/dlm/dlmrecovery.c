@@ -1378,6 +1378,15 @@ int dlm_mig_lockres_handler(struct o2net_msg *msg, u32 len, void *data,
 	if (!dlm_grab(dlm))
 		return -EINVAL;
 
+	if (!dlm_joined(dlm)) {
+		mlog(ML_ERROR, "Domain %s not joined! "
+			  "lockres %.*s, master %u\n",
+			  dlm->name, mres->lockname_len,
+			  mres->lockname, mres->master);
+		dlm_put(dlm);
+		return -EINVAL;
+	}
+
 	BUG_ON(!(mres->flags & (DLM_MRES_RECOVERY|DLM_MRES_MIGRATION)));
 
 	real_master = mres->master;
@@ -2330,13 +2339,6 @@ static void dlm_free_dead_locks(struct dlm_ctxt *dlm,
 	/* do not kick thread yet */
 	__dlm_dirty_lockres(dlm, res);
 }
-
-/* if this node is the recovery master, and there are no
- * locks for a given lockres owned by this node that are in
- * either PR or EX mode, zero out the lvb before requesting.
- *
- */
-
 
 static void dlm_do_local_recovery_cleanup(struct dlm_ctxt *dlm, u8 dead_node)
 {

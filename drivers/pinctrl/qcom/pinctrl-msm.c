@@ -818,7 +818,7 @@ static int msm_gpio_init(struct msm_pinctrl *pctrl)
 		return -EINVAL;
 
 	chip = &pctrl->chip;
-	chip->base = 0;
+	chip->base = -1;
 	chip->ngpio = ngpio;
 	chip->label = dev_name(pctrl->dev);
 	chip->parent = pctrl->dev;
@@ -898,10 +898,9 @@ int msm_pinctrl_probe(struct platform_device *pdev,
 	int ret;
 
 	pctrl = devm_kzalloc(&pdev->dev, sizeof(*pctrl), GFP_KERNEL);
-	if (!pctrl) {
-		dev_err(&pdev->dev, "Can't allocate msm_pinctrl\n");
+	if (!pctrl)
 		return -ENOMEM;
-	}
+
 	pctrl->dev = &pdev->dev;
 	pctrl->soc = soc_data;
 	pctrl->chip = msm_gpio_template;

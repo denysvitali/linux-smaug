@@ -306,9 +306,7 @@ static int seg6_genl_dumphmac(struct sk_buff *skb, struct netlink_callback *cb)
 	struct seg6_hmac_info *hinfo;
 	int ret;
 
-	ret = rhashtable_walk_start(iter);
-	if (ret && ret != -EAGAIN)
-		goto done;
+	rhashtable_walk_start(iter);
 
 	for (;;) {
 		hinfo = rhashtable_walk_next(iter);
@@ -397,6 +395,7 @@ static void __net_exit seg6_net_exit(struct net *net)
 static struct pernet_operations ip6_segments_ops = {
 	.init = seg6_net_init,
 	.exit = seg6_net_exit,
+	.async = true,
 };
 
 static const struct genl_ops seg6_genl_ops[] = {

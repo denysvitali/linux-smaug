@@ -1005,6 +1005,13 @@ void security_transfer_creds(struct cred *new, const struct cred *old)
 	call_void_hook(cred_transfer, new, old);
 }
 
+void security_cred_getsecid(const struct cred *c, u32 *secid)
+{
+	*secid = 0;
+	call_void_hook(cred_getsecid, c, secid);
+}
+EXPORT_SYMBOL(security_cred_getsecid);
+
 int security_kernel_act_as(struct cred *new, u32 secid)
 {
 	return call_int_hook(kernel_act_as, 0, new, secid);
@@ -1114,9 +1121,9 @@ int security_task_movememory(struct task_struct *p)
 }
 
 int security_task_kill(struct task_struct *p, struct siginfo *info,
-			int sig, u32 secid)
+			int sig, const struct cred *cred)
 {
-	return call_int_hook(task_kill, 0, p, info, sig, secid);
+	return call_int_hook(task_kill, 0, p, info, sig, cred);
 }
 
 int security_task_prctl(int option, unsigned long arg2, unsigned long arg3,
@@ -1473,6 +1480,7 @@ void security_inet_conn_established(struct sock *sk,
 {
 	call_void_hook(inet_conn_established, sk, skb);
 }
+EXPORT_SYMBOL(security_inet_conn_established);
 
 int security_secmark_relabel_packet(u32 secid)
 {
@@ -1527,6 +1535,27 @@ int security_tun_dev_open(void *security)
 	return call_int_hook(tun_dev_open, 0, security);
 }
 EXPORT_SYMBOL(security_tun_dev_open);
+
+int security_sctp_assoc_request(struct sctp_endpoint *ep, struct sk_buff *skb)
+{
+	return call_int_hook(sctp_assoc_request, 0, ep, skb);
+}
+EXPORT_SYMBOL(security_sctp_assoc_request);
+
+int security_sctp_bind_connect(struct sock *sk, int optname,
+			       struct sockaddr *address, int addrlen)
+{
+	return call_int_hook(sctp_bind_connect, 0, sk, optname,
+			     address, addrlen);
+}
+EXPORT_SYMBOL(security_sctp_bind_connect);
+
+void security_sctp_sk_clone(struct sctp_endpoint *ep, struct sock *sk,
+			    struct sock *newsk)
+{
+	call_void_hook(sctp_sk_clone, ep, sk, newsk);
+}
+EXPORT_SYMBOL(security_sctp_sk_clone);
 
 #endif	/* CONFIG_SECURITY_NETWORK */
 

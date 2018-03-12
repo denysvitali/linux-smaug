@@ -476,36 +476,48 @@ static int msgctl_info(struct ipc_namespace *ns, int msqid,
 static int msgctl_stat(struct ipc_namespace *ns, int msqid,
 			 int cmd, struct msqid64_ds *p)
 {
-	int err;
 	struct msg_queue *msq;
-	int success_return;
+	int id = 0;
+	int err;
 
 	memset(p, 0, sizeof(*p));
 
 	rcu_read_lock();
-	if (cmd == MSG_STAT) {
+	if (cmd == MSG_STAT || cmd == MSG_STAT_ANY) {
 		msq = msq_obtain_object(ns, msqid);
 		if (IS_ERR(msq)) {
 			err = PTR_ERR(msq);
 			goto out_unlock;
 		}
-		success_return = msq->q_perm.id;
-	} else {
+		id = msq->q_perm.id;
+	} else { /* IPC_STAT */
 		msq = msq_obtain_object_check(ns, msqid);
 		if (IS_ERR(msq)) {
 			err = PTR_ERR(msq);
 			goto out_unlock;
 		}
-		success_return = 0;
 	}
 
-	err = -EACCES;
-	if (ipcperms(ns, &msq->q_perm, S_IRUGO))
-		goto out_unlock;
+	/* see comment for SHM_STAT_ANY */
+	if (cmd == MSG_STAT_ANY)
+		audit_ipc_obj(&msq->q_perm);
+	else {
+		err = -EACCES;
+		if (ipcperms(ns, &msq->q_perm, S_IRUGO))
+			goto out_unlock;
+	}
 
 	err = security_msg_queue_msgctl(msq, cmd);
 	if (err)
 		goto out_unlock;
+
+	ipc_lock_object(&msq->q_perm);
+
+	if (!ipc_valid_object(&msq->q_perm)) {
+		ipc_unlock_object(&msq->q_perm);
+		err = -EIDRM;
+		goto out_unlock;
+	}
 
 	kernel_to_ipc64_perm(&msq->q_perm, &p->msg_perm);
 	p->msg_stime  = msq->q_stime;
@@ -516,9 +528,10 @@ static int msgctl_stat(struct ipc_namespace *ns, int msqid,
 	p->msg_qbytes = msq->q_qbytes;
 	p->msg_lspid  = msq->q_lspid;
 	p->msg_lrpid  = msq->q_lrpid;
-	rcu_read_unlock();
 
-	return success_return;
+	ipc_unlock_object(&msq->q_perm);
+	rcu_read_unlock();
+	return id;
 
 out_unlock:
 	rcu_read_unlock();
@@ -550,6 +563,7 @@ SYSCALL_DEFINE3(msgctl, int, msqid, int, cmd, struct msqid_ds __user *, buf)
 		return err;
 	}
 	case MSG_STAT:	/* msqid is an index rather than a msg queue id */
+	case MSG_STAT_ANY:
 	case IPC_STAT:
 		err = msgctl_stat(ns, msqid, cmd, &msqid64);
 		if (err < 0)
@@ -663,6 +677,7 @@ COMPAT_SYSCALL_DEFINE3(msgctl, int, msqid, int, cmd, void __user *, uptr)
 	}
 	case IPC_STAT:
 	case MSG_STAT:
+	case MSG_STAT_ANY:
 		err = msgctl_stat(ns, msqid, cmd, &msqid64);
 		if (err < 0)
 			return err;

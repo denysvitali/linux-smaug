@@ -510,25 +510,21 @@ read_kcore(struct file *file, char __user *buffer, size_t buflen, loff_t *fpos)
 			/* we have to zero-fill user buffer even if no read */
 			if (copy_to_user(buffer, buf, tsz))
 				return -EFAULT;
+		} else if (m->type == KCORE_USER) {
+			/* User page is handled prior to normal kernel page: */
+			if (copy_to_user(buffer, (char *)start, tsz))
+				return -EFAULT;
 		} else {
 			if (kern_addr_valid(start)) {
-				unsigned long n;
-
 				/*
 				 * Using bounce buffer to bypass the
 				 * hardened user copy kernel text checks.
 				 */
-				memcpy(buf, (char *) start, tsz);
-				n = copy_to_user(buffer, buf, tsz);
-				/*
-				 * We cannot distinguish between fault on source
-				 * and fault on destination. When this happens
-				 * we clear too and hope it will trigger the
-				 * EFAULT again.
-				 */
-				if (n) { 
-					if (clear_user(buffer + tsz - n,
-								n))
+				if (probe_kernel_read(buf, (void *) start, tsz)) {
+					if (clear_user(buffer, tsz))
+						return -EFAULT;
+				} else {
+					if (copy_to_user(buffer, buf, tsz))
 						return -EFAULT;
 				}
 			} else {
@@ -550,6 +546,8 @@ read_kcore(struct file *file, char __user *buffer, size_t buflen, loff_t *fpos)
 
 static int open_kcore(struct inode *inode, struct file *filp)
 {
+	if (kernel_is_locked_down("/proc/kcore"))
+		return -EPERM;
 	if (!capable(CAP_SYS_RAWIO))
 		return -EPERM;
 

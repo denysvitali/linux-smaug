@@ -53,13 +53,6 @@ static int submit_bh_wbc(int op, int op_flags, struct buffer_head *bh,
 
 #define BH_ENTRY(list) list_entry((list), struct buffer_head, b_assoc_buffers)
 
-void init_buffer(struct buffer_head *bh, bh_end_io_t *handler, void *private)
-{
-	bh->b_end_io = handler;
-	bh->b_private = private;
-}
-EXPORT_SYMBOL(init_buffer);
-
 inline void touch_buffer(struct buffer_head *bh)
 {
 	trace_block_touch_buffer(bh);
@@ -922,7 +915,8 @@ init_page_buffers(struct page *page, struct block_device *bdev,
 
 	do {
 		if (!buffer_mapped(bh)) {
-			init_buffer(bh, NULL, NULL);
+			bh->b_end_io = NULL;
+			bh->b_private = NULL;
 			bh->b_bdev = bdev;
 			bh->b_blocknr = block;
 			if (uptodate)
@@ -1517,7 +1511,7 @@ void block_invalidatepage(struct page *page, unsigned int offset,
 	 * The get_block cached value has been unconditionally invalidated,
 	 * so real IO is not possible anymore.
 	 */
-	if (offset == 0)
+	if (length == PAGE_SIZE)
 		try_to_release_page(page, 0);
 out:
 	return;
@@ -3014,7 +3008,7 @@ static void end_bio_bh_io_sync(struct bio *bio)
 void guard_bio_eod(int op, struct bio *bio)
 {
 	sector_t maxsector;
-	struct bio_vec *bvec = &bio->bi_io_vec[bio->bi_vcnt - 1];
+	struct bio_vec *bvec = bio_last_bvec_all(bio);
 	unsigned truncated_bytes;
 	struct hd_struct *part;
 
@@ -3055,8 +3049,8 @@ void guard_bio_eod(int op, struct bio *bio)
 	}
 }
 
-static int submit_bh_wbc(int op, int op_flags, struct buffer_head *bh,
-			 enum rw_hint write_hint, struct writeback_control *wbc)
+struct bio *create_bh_bio(int op, int op_flags, struct buffer_head *bh,
+                          enum rw_hint write_hint)
 {
 	struct bio *bio;
 
@@ -3078,11 +3072,6 @@ static int submit_bh_wbc(int op, int op_flags, struct buffer_head *bh,
 	 */
 	bio = bio_alloc(GFP_NOIO, 1);
 
-	if (wbc) {
-		wbc_init_bio(wbc, bio);
-		wbc_account_io(wbc, bh->b_page, bh->b_size);
-	}
-
 	bio->bi_iter.bi_sector = bh->b_blocknr * (bh->b_size >> 9);
 	bio_set_dev(bio, bh->b_bdev);
 	bio->bi_write_hint = write_hint;
@@ -3102,13 +3091,44 @@ static int submit_bh_wbc(int op, int op_flags, struct buffer_head *bh,
 		op_flags |= REQ_PRIO;
 	bio_set_op_attrs(bio, op, op_flags);
 
+	return bio;
+}
+
+static int submit_bh_wbc(int op, int op_flags, struct buffer_head *bh,
+			 enum rw_hint write_hint, struct writeback_control *wbc)
+{
+	struct bio *bio;
+
+	bio = create_bh_bio(op, op_flags, bh, write_hint);
+
+	if (wbc) {
+		wbc_init_bio(wbc, bio);
+		wbc_account_io(wbc, bh->b_page, bh->b_size);
+	}
+
 	submit_bio(bio);
 	return 0;
 }
 
+int submit_bh_blkcg_css(int op, int op_flags, struct buffer_head *bh,
+			struct cgroup_subsys_state *blkcg_css)
+{
+	struct bio *bio;
+
+	bio = create_bh_bio(op, op_flags, bh, 0);
+	bio_associate_blkcg(bio, blkcg_css);
+	submit_bio(bio);
+	return 0;
+}
+EXPORT_SYMBOL(submit_bh_blkcg_css);
+
 int submit_bh(int op, int op_flags, struct buffer_head *bh)
 {
-	return submit_bh_wbc(op, op_flags, bh, 0, NULL);
+	struct bio *bio;
+
+	bio = create_bh_bio(op, op_flags, bh, 0);
+	submit_bio(bio);
+	return 0;
 }
 EXPORT_SYMBOL(submit_bh);
 

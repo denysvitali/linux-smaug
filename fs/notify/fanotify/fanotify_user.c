@@ -16,6 +16,7 @@
 #include <linux/uaccess.h>
 #include <linux/compat.h>
 #include <linux/sched/signal.h>
+#include <linux/memcontrol.h>
 
 #include <asm/ioctls.h>
 
@@ -239,15 +240,15 @@ out_close_fd:
 }
 
 /* intofiy userspace file descriptor functions */
-static unsigned int fanotify_poll(struct file *file, poll_table *wait)
+static __poll_t fanotify_poll(struct file *file, poll_table *wait)
 {
 	struct fsnotify_group *group = file->private_data;
-	int ret = 0;
+	__poll_t ret = 0;
 
 	poll_wait(file, &group->notification_waitq, wait);
 	spin_lock(&group->notification_lock);
 	if (!fsnotify_notify_queue_is_empty(group))
-		ret = POLLIN | POLLRDNORM;
+		ret = EPOLLIN | EPOLLRDNORM;
 	spin_unlock(&group->notification_lock);
 
 	return ret;
@@ -756,8 +757,9 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 
 	group->fanotify_data.user = user;
 	atomic_inc(&user->fanotify_listeners);
+	group->memcg = get_mem_cgroup_from_mm(current->mm);
 
-	oevent = fanotify_alloc_event(NULL, FS_Q_OVERFLOW, NULL);
+	oevent = fanotify_alloc_event(group, NULL, FS_Q_OVERFLOW, NULL);
 	if (unlikely(!oevent)) {
 		fd = -ENOMEM;
 		goto out_destroy_group;
@@ -951,7 +953,8 @@ COMPAT_SYSCALL_DEFINE6(fanotify_mark,
  */
 static int __init fanotify_user_setup(void)
 {
-	fanotify_mark_cache = KMEM_CACHE(fsnotify_mark, SLAB_PANIC);
+	fanotify_mark_cache = KMEM_CACHE(fsnotify_mark,
+					 SLAB_PANIC|SLAB_ACCOUNT);
 	fanotify_event_cachep = KMEM_CACHE(fanotify_event_info, SLAB_PANIC);
 	if (IS_ENABLED(CONFIG_FANOTIFY_ACCESS_PERMISSIONS)) {
 		fanotify_perm_event_cachep =

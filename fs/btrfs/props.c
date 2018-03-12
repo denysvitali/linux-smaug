@@ -19,8 +19,8 @@
 #include <linux/hashtable.h>
 #include "props.h"
 #include "btrfs_inode.h"
-#include "hash.h"
 #include "transaction.h"
+#include "ctree.h"
 #include "xattr.h"
 #include "compression.h"
 
@@ -116,7 +116,7 @@ static int __btrfs_set_prop(struct btrfs_trans_handle *trans,
 		return -EINVAL;
 
 	if (value_len == 0) {
-		ret = __btrfs_setxattr(trans, inode, handler->xattr_name,
+		ret = btrfs_setxattr(trans, inode, handler->xattr_name,
 				       NULL, 0, flags);
 		if (ret)
 			return ret;
@@ -130,13 +130,13 @@ static int __btrfs_set_prop(struct btrfs_trans_handle *trans,
 	ret = handler->validate(value, value_len);
 	if (ret)
 		return ret;
-	ret = __btrfs_setxattr(trans, inode, handler->xattr_name,
+	ret = btrfs_setxattr(trans, inode, handler->xattr_name,
 			       value, value_len, flags);
 	if (ret)
 		return ret;
 	ret = handler->apply(inode, value, value_len);
 	if (ret) {
-		__btrfs_setxattr(trans, inode, handler->xattr_name,
+		btrfs_setxattr(trans, inode, handler->xattr_name,
 				 NULL, 0, flags);
 		return ret;
 	}
@@ -164,7 +164,6 @@ static int iterate_object_props(struct btrfs_root *root,
 						 size_t),
 				void *ctx)
 {
-	struct btrfs_fs_info *fs_info = root->fs_info;
 	int ret;
 	char *name_buf = NULL;
 	char *value_buf = NULL;
@@ -214,12 +213,6 @@ static int iterate_object_props(struct btrfs_root *root,
 			this_len = sizeof(*di) + name_len + data_len;
 			name_ptr = (unsigned long)(di + 1);
 			data_ptr = name_ptr + name_len;
-
-			if (verify_dir_item(fs_info, leaf,
-					    path->slots[0], di)) {
-				ret = -EIO;
-				goto out;
-			}
 
 			if (name_len <= XATTR_BTRFS_PREFIX_LEN ||
 			    memcmp_extent_buffer(leaf, XATTR_BTRFS_PREFIX,
@@ -414,7 +407,7 @@ static int prop_compression_apply(struct inode *inode,
 		type = BTRFS_COMPRESS_LZO;
 	else if (!strncmp("zlib", value, 4))
 		type = BTRFS_COMPRESS_ZLIB;
-	else if (!strncmp("zstd", value, len))
+	else if (!strncmp("zstd", value, 4))
 		type = BTRFS_COMPRESS_ZSTD;
 	else
 		return -EINVAL;
@@ -430,11 +423,11 @@ static const char *prop_compression_extract(struct inode *inode)
 {
 	switch (BTRFS_I(inode)->prop_compress) {
 	case BTRFS_COMPRESS_ZLIB:
-		return "zlib";
 	case BTRFS_COMPRESS_LZO:
-		return "lzo";
 	case BTRFS_COMPRESS_ZSTD:
-		return "zstd";
+		return btrfs_compress_type2str(BTRFS_I(inode)->prop_compress);
+	default:
+		break;
 	}
 
 	return NULL;

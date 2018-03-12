@@ -586,6 +586,7 @@ static void __net_exit cttimeout_net_exit(struct net *net)
 static struct pernet_operations cttimeout_ops = {
 	.init	= cttimeout_net_init,
 	.exit	= cttimeout_net_exit,
+	.async	= true,
 };
 
 static int __init cttimeout_init(void)
@@ -615,8 +616,6 @@ err_out:
 
 static void __exit cttimeout_exit(void)
 {
-	pr_info("cttimeout: unregistering from nfnetlink.\n");
-
 	nfnetlink_subsys_unregister(&cttimeout_subsys);
 
 	unregister_pernet_subsys(&cttimeout_ops);

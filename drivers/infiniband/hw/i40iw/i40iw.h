@@ -564,7 +564,8 @@ struct i40iw_cm_node *i40iw_find_node(struct i40iw_cm_core *cm_core,
 				      u32 *rem_addr,
 				      u16 loc_port,
 				      u32 *loc_addr,
-				      bool add_refcnt);
+				      bool add_refcnt,
+				      bool accelerated_list);
 
 enum i40iw_status_code i40iw_hw_flush_wqes(struct i40iw_device *iwdev,
 					   struct i40iw_sc_qp *qp,
@@ -587,5 +588,8 @@ int i40iw_inet6addr_event(struct notifier_block *notifier,
 int i40iw_net_event(struct notifier_block *notifier,
 		    unsigned long event,
 		    void *ptr);
+int i40iw_netdevice_event(struct notifier_block *notifier,
+			  unsigned long event,
+			  void *ptr);
 
 #endif

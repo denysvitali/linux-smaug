@@ -123,8 +123,10 @@ config I2C_I801
 	    Wildcat Point (PCH)
 	    Wildcat Point-LP (PCH)
 	    BayTrail (SOC)
+	    Braswell (SOC)
 	    Sunrise Point-H (PCH)
 	    Sunrise Point-LP (PCH)
+	    Kaby Lake-H (PCH)
 	    DNV (SOC)
 	    Broxton (SOC)
 	    Lewisburg (PCH)
@@ -603,6 +605,14 @@ config I2C_GPIO
 	  This is a very simple bitbanging I2C driver utilizing the
 	  arch-neutral GPIO API to control the SCL and SDA lines.
 
+config I2C_GPIO_FAULT_INJECTOR
+	bool "GPIO-based fault injector"
+	depends on I2C_GPIO
+	help
+	  This adds some functionality to the i2c-gpio driver which can inject
+	  faults to an I2C bus, so another bus master can be stress-tested.
+	  This is for debugging. If unsure, say 'no'.
+
 config I2C_HIGHLANDER
 	tristate "Highlander FPGA SMBus interface"
 	depends on SH_HIGHLANDER
@@ -627,7 +637,7 @@ config I2C_IBM_IIC
 
 config I2C_IMG
 	tristate "Imagination Technologies I2C SCB Controller"
-	depends on MIPS || METAG || COMPILE_TEST
+	depends on MIPS || COMPILE_TEST
 	help
 	  Say Y here if you want to use the IMG I2C SCB controller,
 	  available on the TZ1090 and other IMG SoCs.

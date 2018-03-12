@@ -28,11 +28,6 @@ hardware descriptions such as device tree or ACPI:
 - gpio-beeper: drivers/input/misc/gpio-beeper.c is used to provide a beep from
   an external speaker connected to a GPIO line.
 
-- gpio-tilt-polled: drivers/input/misc/gpio_tilt_polled.c provides tilt
-  detection switches using GPIO, which is useful for your homebrewn pinball
-  machine if for nothing else. It can detect different tilt angles of the
-  monitored object.
-
 - extcon-gpio: drivers/extcon/extcon-gpio.c is used when you need to read an
   external connector status, such as a headset line for an audio driver or an
   HDMI connector. It will provide a better userspace sysfs interface than GPIO.
@@ -79,8 +74,8 @@ hardware descriptions such as device tree or ACPI:
   it from 1-to-0-to-1. If that hardware does not receive its "ping"
   periodically, it will reset the system.
 
-- gpio-nand: drivers/mtd/nand/gpio.c is used to connect a NAND flash chip to
-  a set of simple GPIO lines: RDY, NCE, ALE, CLE, NWP. It interacts with the
+- gpio-nand: drivers/mtd/nand/raw/gpio.c is used to connect a NAND flash chip
+  to a set of simple GPIO lines: RDY, NCE, ALE, CLE, NWP. It interacts with the
   NAND flash MTD subsystem and provides chip access and partition parsing like
   any other NAND driving hardware.
 

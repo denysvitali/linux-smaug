@@ -335,6 +335,57 @@ static void dwc2_handle_session_req_intr(struct dwc2_hsotg *hsotg)
 	}
 }
 
+/**
+ * dwc2_wakeup_from_lpm_l1 - Exit the device from LPM L1 state
+ *
+ * @hsotg: Programming view of DWC_otg controller
+ *
+ */
+static void dwc2_wakeup_from_lpm_l1(struct dwc2_hsotg *hsotg)
+{
+	u32 glpmcfg;
+	u32 i = 0;
+
+	if (hsotg->lx_state != DWC2_L1) {
+		dev_err(hsotg->dev, "Core isn't in DWC2_L1 state\n");
+		return;
+	}
+
+	glpmcfg = dwc2_readl(hsotg->regs + GLPMCFG);
+	if (dwc2_is_device_mode(hsotg)) {
+		dev_dbg(hsotg->dev, "Exit from L1 state\n");
+		glpmcfg &= ~GLPMCFG_ENBLSLPM;
+		glpmcfg &= ~GLPMCFG_HIRD_THRES_EN;
+		dwc2_writel(glpmcfg, hsotg->regs + GLPMCFG);
+
+		do {
+			glpmcfg = dwc2_readl(hsotg->regs + GLPMCFG);
+
+			if (!(glpmcfg & (GLPMCFG_COREL1RES_MASK |
+					 GLPMCFG_L1RESUMEOK | GLPMCFG_SLPSTS)))
+				break;
+
+			udelay(1);
+		} while (++i < 200);
+
+		if (i == 200) {
+			dev_err(hsotg->dev, "Failed to exit L1 sleep state in 200us.\n");
+			return;
+		}
+		dwc2_gadget_init_lpm(hsotg);
+	} else {
+		/* TODO */
+		dev_err(hsotg->dev, "Host side LPM is not supported.\n");
+		return;
+	}
+
+	/* Change to L0 state */
+	hsotg->lx_state = DWC2_L0;
+
+	/* Inform gadget to exit from L1 */
+	call_gadget(hsotg, resume);
+}
+
 /*
  * This interrupt indicates that the DWC_otg controller has detected a
  * resume or remote wakeup sequence. If the DWC_otg controller is in
@@ -351,6 +402,11 @@ static void dwc2_handle_wakeup_detected_intr(struct dwc2_hsotg *hsotg)
 
 	dev_dbg(hsotg->dev, "++Resume or Remote Wakeup Detected Interrupt++\n");
 	dev_dbg(hsotg->dev, "%s lxstate = %d\n", __func__, hsotg->lx_state);
+
+	if (hsotg->lx_state == DWC2_L1) {
+		dwc2_wakeup_from_lpm_l1(hsotg);
+		return;
+	}
 
 	if (dwc2_is_device_mode(hsotg)) {
 		dev_dbg(hsotg->dev, "DSTS=0x%0x\n",
@@ -479,10 +535,75 @@ skip_power_saving:
 	}
 }
 
+/**
+ * dwc2_handle_lpm_intr - GINTSTS_LPMTRANRCVD Interrupt handler
+ *
+ * @hsotg: Programming view of DWC_otg controller
+ *
+ */
+static void dwc2_handle_lpm_intr(struct dwc2_hsotg *hsotg)
+{
+	u32 glpmcfg;
+	u32 pcgcctl;
+	u32 hird;
+	u32 hird_thres;
+	u32 hird_thres_en;
+	u32 enslpm;
+
+	/* Clear interrupt */
+	dwc2_writel(GINTSTS_LPMTRANRCVD, hsotg->regs + GINTSTS);
+
+	glpmcfg = dwc2_readl(hsotg->regs + GLPMCFG);
+
+	if (!(glpmcfg & GLPMCFG_LPMCAP)) {
+		dev_err(hsotg->dev, "Unexpected LPM interrupt\n");
+		return;
+	}
+
+	hird = (glpmcfg & GLPMCFG_HIRD_MASK) >> GLPMCFG_HIRD_SHIFT;
+	hird_thres = (glpmcfg & GLPMCFG_HIRD_THRES_MASK &
+			~GLPMCFG_HIRD_THRES_EN) >> GLPMCFG_HIRD_THRES_SHIFT;
+	hird_thres_en = glpmcfg & GLPMCFG_HIRD_THRES_EN;
+	enslpm = glpmcfg & GLPMCFG_ENBLSLPM;
+
+	if (dwc2_is_device_mode(hsotg)) {
+		dev_dbg(hsotg->dev, "HIRD_THRES_EN = %d\n", hird_thres_en);
+
+		if (hird_thres_en && hird >= hird_thres) {
+			dev_dbg(hsotg->dev, "L1 with utmi_l1_suspend_n\n");
+		} else if (enslpm) {
+			dev_dbg(hsotg->dev, "L1 with utmi_sleep_n\n");
+		} else {
+			dev_dbg(hsotg->dev, "Entering Sleep with L1 Gating\n");
+
+			pcgcctl = dwc2_readl(hsotg->regs + PCGCTL);
+			pcgcctl |= PCGCTL_ENBL_SLEEP_GATING;
+			dwc2_writel(pcgcctl, hsotg->regs + PCGCTL);
+		}
+		/**
+		 * Examine prt_sleep_sts after TL1TokenTetry period max (10 us)
+		 */
+		udelay(10);
+
+		glpmcfg = dwc2_readl(hsotg->regs + GLPMCFG);
+
+		if (glpmcfg & GLPMCFG_SLPSTS) {
+			/* Save the current state */
+			hsotg->lx_state = DWC2_L1;
+			dev_dbg(hsotg->dev,
+				"Core is in L1 sleep glpmcfg=%08x\n", glpmcfg);
+
+			/* Inform gadget that we are in L1 state */
+			call_gadget(hsotg, suspend);
+		}
+	}
+}
+
 #define GINTMSK_COMMON	(GINTSTS_WKUPINT | GINTSTS_SESSREQINT |		\
 			 GINTSTS_CONIDSTSCHNG | GINTSTS_OTGINT |	\
 			 GINTSTS_MODEMIS | GINTSTS_DISCONNINT |		\
-			 GINTSTS_USBSUSP | GINTSTS_PRTINT)
+			 GINTSTS_USBSUSP | GINTSTS_PRTINT |		\
+			 GINTSTS_LPMTRANRCVD)
 
 /*
  * This function returns the Core Interrupt register
@@ -553,6 +674,8 @@ irqreturn_t dwc2_handle_common_intr(int irq, void *dev)
 		dwc2_handle_wakeup_detected_intr(hsotg);
 	if (gintsts & GINTSTS_USBSUSP)
 		dwc2_handle_usb_suspend_intr(hsotg);
+	if (gintsts & GINTSTS_LPMTRANRCVD)
+		dwc2_handle_lpm_intr(hsotg);
 
 	if (gintsts & GINTSTS_PRTINT) {
 		/*

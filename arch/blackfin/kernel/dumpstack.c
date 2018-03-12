@@ -174,4 +174,3 @@ void dump_stack(void)
 	show_stack(current, &stack);
 	trace_buffer_restore(tflags);
 }
-EXPORT_SYMBOL(dump_stack);

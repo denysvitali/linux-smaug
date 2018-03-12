@@ -51,6 +51,7 @@
 #include <linux/taskstats_kern.h>
 #include <linux/delayacct.h>
 #include <linux/unistd.h>
+#include <linux/utsname.h>
 #include <linux/rmap.h>
 #include <linux/mempolicy.h>
 #include <linux/key.h>
@@ -89,6 +90,7 @@
 #include <linux/io.h>
 #include <linux/cache.h>
 #include <linux/rodata_test.h>
+#include <linux/jump_label.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
@@ -688,6 +690,7 @@ asmlinkage __visible void __init start_kernel(void)
 	cred_init();
 	fork_init();
 	proc_caches_init();
+	uts_ns_init();
 	buffer_init();
 	key_init();
 	security_init();
@@ -1000,6 +1003,7 @@ static int __ref kernel_init(void *unused)
 	/* need to finish all async __init code before freeing the memory */
 	async_synchronize_full();
 	ftrace_free_init_mem();
+	jump_label_invalidate_init();
 	free_initmem();
 	mark_readonly();
 	system_state = SYSTEM_RUNNING;

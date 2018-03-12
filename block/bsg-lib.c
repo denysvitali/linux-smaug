@@ -30,7 +30,7 @@
 
 /**
  * bsg_teardown_job - routine to teardown a bsg job
- * @job: bsg_job that is to be torn down
+ * @kref: kref inside bsg_job that is to be torn down
  */
 static void bsg_teardown_job(struct kref *kref)
 {
@@ -251,6 +251,7 @@ static void bsg_exit_rq(struct request_queue *q, struct request *req)
  * @name: device to give bsg device
  * @job_fn: bsg job handler
  * @dd_job_size: size of LLD data needed for each job
+ * @release: @dev release function
  */
 struct request_queue *bsg_setup_queue(struct device *dev, const char *name,
 		bsg_job_fn *job_fn, int dd_job_size,
@@ -274,8 +275,8 @@ struct request_queue *bsg_setup_queue(struct device *dev, const char *name,
 
 	q->queuedata = dev;
 	q->bsg_job_fn = job_fn;
-	queue_flag_set_unlocked(QUEUE_FLAG_BIDI, q);
-	queue_flag_set_unlocked(QUEUE_FLAG_SCSI_PASSTHROUGH, q);
+	blk_queue_flag_set(QUEUE_FLAG_BIDI, q);
+	blk_queue_flag_set(QUEUE_FLAG_SCSI_PASSTHROUGH, q);
 	blk_queue_softirq_done(q, bsg_softirq_done);
 	blk_queue_rq_timeout(q, BLK_DEFAULT_SG_TIMEOUT);
 

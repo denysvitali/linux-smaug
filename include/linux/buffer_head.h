@@ -14,6 +14,7 @@
 #include <linux/pagemap.h>
 #include <linux/wait.h>
 #include <linux/atomic.h>
+#include <linux/cgroup.h>
 
 #ifdef CONFIG_BLOCK
 
@@ -81,11 +82,14 @@ struct buffer_head {
 /*
  * macro tricks to expand the set_buffer_foo(), clear_buffer_foo()
  * and buffer_foo() functions.
+ * To avoid reset buffer flags that are already set, because that causes
+ * a costly cache line transition, check the flag first.
  */
 #define BUFFER_FNS(bit, name)						\
 static __always_inline void set_buffer_##name(struct buffer_head *bh)	\
 {									\
-	set_bit(BH_##bit, &(bh)->b_state);				\
+	if (!test_bit(BH_##bit, &(bh)->b_state))			\
+		set_bit(BH_##bit, &(bh)->b_state);			\
 }									\
 static __always_inline void clear_buffer_##name(struct buffer_head *bh)	\
 {									\
@@ -151,7 +155,6 @@ void buffer_check_dirty_writeback(struct page *page,
 
 void mark_buffer_dirty(struct buffer_head *bh);
 void mark_buffer_write_io_error(struct buffer_head *bh);
-void init_buffer(struct buffer_head *, bh_end_io_t *, void *);
 void touch_buffer(struct buffer_head *bh);
 void set_bh_page(struct buffer_head *bh,
 		struct page *page, unsigned long offset);
@@ -198,6 +201,8 @@ void ll_rw_block(int, int, int, struct buffer_head * bh[]);
 int sync_dirty_buffer(struct buffer_head *bh);
 int __sync_dirty_buffer(struct buffer_head *bh, int op_flags);
 void write_dirty_buffer(struct buffer_head *bh, int op_flags);
+int submit_bh_blkcg_css(int op, int op_flags, struct buffer_head *bh,
+			struct cgroup_subsys_state *blkcg_css);
 int submit_bh(int, int, struct buffer_head *);
 void write_boundary_block(struct block_device *bdev,
 			sector_t bblock, unsigned blocksize);

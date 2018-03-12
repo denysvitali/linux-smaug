@@ -54,7 +54,7 @@ static void flush_data_cache_page(unsigned long addr)
 
 void flush_dcache_page(struct page *page)
 {
-	struct address_space *mapping = page_mapping(page);
+	struct address_space *mapping = page_mapping_file(page);
 	unsigned long addr;
 
 	if (PageHighMem(page))
@@ -86,7 +86,8 @@ void __update_cache(struct vm_area_struct *vma, unsigned long address,
 	if (unlikely(!pfn_valid(pfn)))
 		return;
 	page = pfn_to_page(pfn);
-	if (page_mapping(page) && test_bit(PG_dcache_dirty, &(page)->flags)) {
+	if (page_mapping_file(page) &&
+	    test_bit(PG_dcache_dirty, &(page)->flags)) {
 		addr = (unsigned long) page_address(page);
 		if (exec)
 			flush_data_cache_page(addr);

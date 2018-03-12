@@ -387,34 +387,27 @@ u8	qos_acm(u8 acm_mask, u8 priority)
 	return change_priority;
 }
 
-static void set_qos(struct pkt_file *ppktfile, struct pkt_attrib *pattrib)
+static void set_qos(struct sk_buff *skb, struct pkt_attrib *pattrib)
 {
-	struct ethhdr etherhdr;
-	struct iphdr ip_hdr;
-	s32 user_prio = 0;
-
-	_rtw_open_pktfile(ppktfile->pkt, ppktfile);
-	_rtw_pktfile_read(ppktfile, (unsigned char *)&etherhdr, ETH_HLEN);
-
-	/*  get user_prio from IP hdr */
 	if (pattrib->ether_type == 0x0800) {
-		_rtw_pktfile_read(ppktfile, (u8 *)&ip_hdr, sizeof(ip_hdr));
-/* 		user_prio = (ntohs(ip_hdr.tos) >> 5) & 0x3; */
-		user_prio = ip_hdr.tos >> 5;
+		struct iphdr ip_hdr;
+
+		skb_copy_bits(skb, ETH_HLEN, &ip_hdr, sizeof(ip_hdr));
+		pattrib->priority = ip_hdr.tos >> 5;
 	} else if (pattrib->ether_type == ETH_P_PAE) {
 		/*  "When priority processing of data frames is supported, */
 		/*  a STA's SME should send EAPOL-Key frames at the highest priority." */
-		user_prio = 7;
+		pattrib->priority = 7;
+	} else {
+		pattrib->priority = 0;
 	}
 
-	pattrib->priority = user_prio;
 	pattrib->hdrlen = WLAN_HDR_A3_QOS_LEN;
 	pattrib->subtype = WIFI_QOS_DATA_TYPE;
 }
 
 static s32 update_attrib(struct adapter *padapter, struct sk_buff *pkt, struct pkt_attrib *pattrib)
 {
-	struct pkt_file pktfile;
 	struct sta_info *psta = NULL;
 	struct ethhdr etherhdr;
 
@@ -425,9 +418,7 @@ static s32 update_attrib(struct adapter *padapter, struct sk_buff *pkt, struct p
 	struct qos_priv		*pqospriv = &pmlmepriv->qospriv;
 	int res = _SUCCESS;
 
-
-	_rtw_open_pktfile(pkt, &pktfile);
-	_rtw_pktfile_read(&pktfile, (u8 *)&etherhdr, ETH_HLEN);
+	skb_copy_bits(pkt, 0, &etherhdr, ETH_HLEN);
 
 	pattrib->ether_type = ntohs(etherhdr.h_proto);
 
@@ -448,16 +439,17 @@ static s32 update_attrib(struct adapter *padapter, struct sk_buff *pkt, struct p
 		memcpy(pattrib->ta, get_bssid(pmlmepriv), ETH_ALEN);
 	}
 
-	pattrib->pktlen = pktfile.pkt_len;
+	pattrib->pktlen = pkt->len - ETH_HLEN;
 
 	if (pattrib->ether_type == ETH_P_IP) {
 		/*  The following is for DHCP and ARP packet, we use cck1M to tx these packets and let LPS awake some time */
 		/*  to prevent DHCP protocol fail */
 		u8 tmp[24];
 
-		_rtw_pktfile_read(&pktfile, &tmp[0], 24);
+		skb_copy_bits(pkt, ETH_HLEN, tmp, 24);
+
 		pattrib->dhcp_pkt = 0;
-		if (pktfile.pkt_len > 282) {/* MINIMUM_DHCP_PACKET_SIZE) { */
+		if (pkt->len > ETH_HLEN + 24 + 282) {/* MINIMUM_DHCP_PACKET_SIZE) { */
 			if (pattrib->ether_type == ETH_P_IP) {/*  IP header */
 				if (((tmp[21] == 68) && (tmp[23] == 67)) ||
 				    ((tmp[21] == 67) && (tmp[23] == 68))) {
@@ -487,7 +479,7 @@ static s32 update_attrib(struct adapter *padapter, struct sk_buff *pkt, struct p
 		psta = rtw_get_bcmc_stainfo(padapter);
 	} else {
 		psta = rtw_get_stainfo(pstapriv, pattrib->ra);
-		if (psta == NULL) { /*  if we cannot get psta => drrp the pkt */
+		if (!psta) { /*  if we cannot get psta => drrp the pkt */
 			RT_TRACE(_module_rtl871x_xmit_c_, _drv_alert_, ("\nupdate_attrib => get sta_info fail, ra: %pM\n", (pattrib->ra)));
 			res = _FAIL;
 			goto exit;
@@ -516,10 +508,10 @@ static s32 update_attrib(struct adapter *padapter, struct sk_buff *pkt, struct p
 
 	if (check_fwstate(pmlmepriv, WIFI_AP_STATE|WIFI_ADHOC_STATE|WIFI_ADHOC_MASTER_STATE)) {
 		if (psta->qos_option)
-			set_qos(&pktfile, pattrib);
+			set_qos(pkt, pattrib);
 	} else {
 		if (pqospriv->qos_option) {
-			set_qos(&pktfile, pattrib);
+			set_qos(pkt, pattrib);
 
 			if (pmlmepriv->acm_mask != 0)
 				pattrib->priority = qos_acm(pmlmepriv->acm_mask, pattrib->priority);
@@ -630,7 +622,7 @@ static s32 xmitframe_addmic(struct adapter *padapter, struct xmit_frame *pxmitfr
 
 	if (pattrib->encrypt == _TKIP_) {/* if (psecuritypriv->dot11PrivacyAlgrthm == _TKIP_PRIVACY_) */
 		/* encode mic code */
-		if (stainfo != NULL) {
+		if (stainfo) {
 			u8 null_key[16] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
 					   0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
 					   0x0, 0x0};
@@ -951,7 +943,6 @@ This sub-routine will perform all the following:
 */
 s32 rtw_xmitframe_coalesce(struct adapter *padapter, struct sk_buff *pkt, struct xmit_frame *pxmitframe)
 {
-	struct pkt_file pktfile;
 	s32 frg_inx, frg_len, mpdu_len, llc_sz, mem_sz;
 	size_t addr;
 	u8 *pframe, *mem_start;
@@ -962,11 +953,11 @@ s32 rtw_xmitframe_coalesce(struct adapter *padapter, struct sk_buff *pkt, struct
 	u8 *pbuf_start;
 	s32 bmcst = IS_MCAST(pattrib->ra);
 	s32 res = _SUCCESS;
-
+	size_t remainder = pkt->len - ETH_HLEN;
 
 	psta = rtw_get_stainfo(&padapter->stapriv, pattrib->ra);
 
-	if (psta == NULL)
+	if (!psta)
 		return _FAIL;
 
 	if (pxmitframe->buf_addr == NULL) {
@@ -986,9 +977,6 @@ s32 rtw_xmitframe_coalesce(struct adapter *padapter, struct sk_buff *pkt, struct
 		res = _FAIL;
 		goto exit;
 	}
-
-	_rtw_open_pktfile(pkt, &pktfile);
-	_rtw_pktfile_read(&pktfile, NULL, ETH_HLEN);
 
 	frg_inx = 0;
 	frg_len = pxmitpriv->frag_len - 4;/* 2346-4 = 2342 */
@@ -1046,12 +1034,9 @@ s32 rtw_xmitframe_coalesce(struct adapter *padapter, struct sk_buff *pkt, struct
 		if ((pattrib->icv_len > 0) && (pattrib->bswenc))
 			mpdu_len -= pattrib->icv_len;
 
-		if (bmcst) {
-			/*  don't do fragment to broadcat/multicast packets */
-			mem_sz = _rtw_pktfile_read(&pktfile, pframe, pattrib->pktlen);
-		} else {
-			mem_sz = _rtw_pktfile_read(&pktfile, pframe, mpdu_len);
-		}
+		mem_sz = min_t(size_t, bmcst ? pattrib->pktlen : mpdu_len, remainder);
+		skb_copy_bits(pkt, pkt->len - remainder, pframe, mem_sz);
+		remainder -= mem_sz;
 
 		pframe += mem_sz;
 
@@ -1062,7 +1047,7 @@ s32 rtw_xmitframe_coalesce(struct adapter *padapter, struct sk_buff *pkt, struct
 
 		frg_inx++;
 
-		if (bmcst || pktfile.pkt_len == 0) {
+		if (bmcst || remainder == 0) {
 			pattrib->nr_frags = frg_inx;
 
 			pattrib->last_txcmdsz = pattrib->hdrlen + pattrib->iv_len + ((pattrib->nr_frags == 1) ? llc_sz : 0) +
@@ -1154,7 +1139,7 @@ void rtw_update_protection(struct adapter *padapter, u8 *ie, uint ie_len)
 	case AUTO_VCS:
 	default:
 		perp = rtw_get_ie(ie, _ERPINFO_IE_, &erp_len, ie_len);
-		if (perp == NULL) {
+		if (!perp) {
 			pxmitpriv->vcs = NONE_VCS;
 		} else {
 			protection = (*(perp + 2)) & BIT(1);
@@ -1222,7 +1207,7 @@ s32 rtw_free_xmitbuf_ext(struct xmit_priv *pxmitpriv, struct xmit_buf *pxmitbuf)
 	struct __queue *pfree_queue = &pxmitpriv->free_xmit_extbuf_queue;
 
 
-	if (pxmitbuf == NULL)
+	if (!pxmitbuf)
 		return _FAIL;
 
 	spin_lock_irqsave(&pfree_queue->lock, irql);
@@ -1268,7 +1253,7 @@ s32 rtw_free_xmitbuf(struct xmit_priv *pxmitpriv, struct xmit_buf *pxmitbuf)
 	unsigned long irql;
 	struct __queue *pfree_xmitbuf_queue = &pxmitpriv->free_xmitbuf_queue;
 
-	if (pxmitbuf == NULL)
+	if (!pxmitbuf)
 		return _FAIL;
 
 	if (pxmitbuf->sctx) {
@@ -1359,7 +1344,7 @@ s32 rtw_free_xmitframe(struct xmit_priv *pxmitpriv, struct xmit_frame *pxmitfram
 	struct sk_buff *pndis_pkt = NULL;
 
 
-	if (pxmitframe == NULL) {
+	if (!pxmitframe) {
 		RT_TRACE(_module_rtl871x_xmit_c_, _drv_err_, ("====== rtw_free_xmitframe():pxmitframe == NULL!!!!!!!!!!\n"));
 		goto exit;
 	}
@@ -1552,7 +1537,7 @@ s32 rtw_xmit_classifier(struct adapter *padapter, struct xmit_frame *pxmitframe)
 	else
 		psta = rtw_get_stainfo(pstapriv, pattrib->ra);
 
-	if (psta == NULL) {
+	if (!psta) {
 		res = _FAIL;
 		DBG_88E("rtw_xmit_classifier: psta == NULL\n");
 		RT_TRACE(_module_rtl871x_xmit_c_, _drv_err_, ("rtw_xmit_classifier: psta == NULL\n"));
@@ -1660,7 +1645,7 @@ s32 rtw_xmit(struct adapter *padapter, struct sk_buff **ppkt)
 	s32 res;
 
 	pxmitframe = rtw_alloc_xmitframe(pxmitpriv);
-	if (pxmitframe == NULL) {
+	if (!pxmitframe) {
 		RT_TRACE(_module_xmit_osdep_c_, _drv_err_, ("rtw_xmit: no more pxmitframe\n"));
 		DBG_88E("DBG_TX_DROP_FRAME %s no more pxmitframe\n", __func__);
 		return -1;
@@ -1713,7 +1698,7 @@ int xmitframe_enqueue_for_sleeping_sta(struct adapter *padapter, struct xmit_fra
 	else
 		psta = rtw_get_stainfo(pstapriv, pattrib->ra);
 
-	if (psta == NULL)
+	if (!psta)
 		return ret;
 
 	if (pattrib->triggered == 1) {

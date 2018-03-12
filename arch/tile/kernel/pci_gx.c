@@ -617,7 +617,7 @@ static void fixup_read_and_payload_sizes(struct pci_controller *controller)
 	}
 }
 
-static int setup_pcie_rc_delay(char *str)
+static int __init setup_pcie_rc_delay(char *str)
 {
 	unsigned long delay = 0;
 	unsigned long trio_index;

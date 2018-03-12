@@ -306,6 +306,23 @@ static inline void refcount_error_report(struct pt_regs *regs, const char *err)
 { }
 #endif
 
+#ifdef CONFIG_LOCK_DOWN_KERNEL
+extern bool __kernel_is_locked_down(const char *what, bool first);
+#else
+static inline bool __kernel_is_locked_down(const char *what, bool first)
+{
+	return false;
+}
+#endif
+
+#define kernel_is_locked_down(what)					\
+	({								\
+		static bool message_given;				\
+		bool locked_down = __kernel_is_locked_down(what, !message_given); \
+		message_given = true;					\
+		locked_down;						\
+	})
+
 /* Internal, do not use. */
 int __must_check _kstrtoul(const char *s, unsigned int base, unsigned long *res);
 int __must_check _kstrtol(const char *s, unsigned int base, long *res);
@@ -439,7 +456,8 @@ extern long simple_strtol(const char *,char **,unsigned int);
 extern unsigned long long simple_strtoull(const char *,char **,unsigned int);
 extern long long simple_strtoll(const char *,char **,unsigned int);
 
-extern int num_to_str(char *buf, int size, unsigned long long num);
+extern int num_to_str(char *buf, int size,
+		      unsigned long long num, unsigned int width);
 
 /* lib/printf utilities */
 
@@ -472,12 +490,22 @@ extern bool parse_option_str(const char *str, const char *option);
 extern char *next_arg(char *args, char **param, char **val);
 
 extern int core_kernel_text(unsigned long addr);
+extern int init_kernel_text(unsigned long addr);
 extern int core_kernel_data(unsigned long addr);
 extern int __kernel_text_address(unsigned long addr);
 extern int kernel_text_address(unsigned long addr);
 extern int func_ptr_is_kernel_text(void *ptr);
 
 unsigned long int_sqrt(unsigned long);
+
+#if BITS_PER_LONG < 64
+u32 int_sqrt64(u64 x);
+#else
+static inline u32 int_sqrt64(u64 x)
+{
+	return (u32)int_sqrt(x);
+}
+#endif
 
 extern void bust_spinlocks(int yes);
 extern int oops_in_progress;		/* If set, an oops, panic(), BUG() or die() is in progress */
@@ -533,6 +561,7 @@ extern enum system_states {
 	SYSTEM_RESTART,
 } system_state;
 
+/* This cannot be an enum because some may be used in assembly source. */
 #define TAINT_PROPRIETARY_MODULE	0
 #define TAINT_FORCED_MODULE		1
 #define TAINT_CPU_OUT_OF_SPEC		2
@@ -550,7 +579,8 @@ extern enum system_states {
 #define TAINT_SOFTLOCKUP		14
 #define TAINT_LIVEPATCH			15
 #define TAINT_AUX			16
-#define TAINT_FLAGS_COUNT		17
+#define TAINT_RANDSTRUCT		17
+#define TAINT_FLAGS_COUNT		18
 
 struct taint_flag {
 	char c_true;	/* character printed when tainted */

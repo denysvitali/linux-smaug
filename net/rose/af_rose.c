@@ -938,7 +938,7 @@ out_release:
 }
 
 static int rose_getname(struct socket *sock, struct sockaddr *uaddr,
-	int *uaddr_len, int peer)
+	int peer)
 {
 	struct full_sockaddr_rose *srose = (struct full_sockaddr_rose *)uaddr;
 	struct sock *sk = sock->sk;
@@ -964,8 +964,7 @@ static int rose_getname(struct socket *sock, struct sockaddr *uaddr,
 			srose->srose_digis[n] = rose->source_digis[n];
 	}
 
-	*uaddr_len = sizeof(struct full_sockaddr_rose);
-	return 0;
+	return sizeof(struct full_sockaddr_rose);
 }
 
 int rose_rx_call_request(struct sk_buff *skb, struct net_device *dev, struct rose_neigh *neigh, unsigned int lci)
@@ -1461,7 +1460,6 @@ static int rose_info_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations rose_info_fops = {
-	.owner = THIS_MODULE,
 	.open = rose_info_open,
 	.read = seq_read,
 	.llseek = seq_lseek,

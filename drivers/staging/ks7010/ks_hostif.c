@@ -21,13 +21,22 @@
 /* Include Wireless Extension definition and check version */
 #include <net/iw_handler.h>	/* New driver API */
 
-/* macro */
-#define inc_smeqhead(priv) \
-	(priv->sme_i.qhead = (priv->sme_i.qhead + 1) % SME_EVENT_BUFF_SIZE)
-#define inc_smeqtail(priv) \
-	(priv->sme_i.qtail = (priv->sme_i.qtail + 1) % SME_EVENT_BUFF_SIZE)
-#define cnt_smeqbody(priv) \
-	(((priv->sme_i.qtail + SME_EVENT_BUFF_SIZE) - (priv->sme_i.qhead)) % SME_EVENT_BUFF_SIZE)
+static inline void inc_smeqhead(struct ks_wlan_private *priv)
+{
+	priv->sme_i.qhead = (priv->sme_i.qhead + 1) % SME_EVENT_BUFF_SIZE;
+}
+
+static inline void inc_smeqtail(struct ks_wlan_private *priv)
+{
+	priv->sme_i.qtail = (priv->sme_i.qtail + 1) % SME_EVENT_BUFF_SIZE;
+}
+
+static inline unsigned int cnt_smeqbody(struct ks_wlan_private *priv)
+{
+	unsigned int sme_cnt = priv->sme_i.qtail - priv->sme_i.qhead;
+
+	return (sme_cnt + SME_EVENT_BUFF_SIZE) % SME_EVENT_BUFF_SIZE;
+}
 
 #define KS_WLAN_MEM_FLAG (GFP_ATOMIC)
 
@@ -242,20 +251,19 @@ int get_ap_information(struct ks_wlan_private *priv, struct ap_info_t *ap_info,
 	offset = 0;
 
 	while (bsize > offset) {
-		/* DPRINTK(4, "Element ID=%d\n",*bp); */
-		switch (*bp) {
-		case 0:	/* ssid */
-			if (*(bp + 1) <= SSID_MAX_SIZE) {
+		switch (*bp) { /* Information Element ID */
+		case WLAN_EID_SSID:
+			if (*(bp + 1) <= IEEE80211_MAX_SSID_LEN) {
 				ap->ssid.size = *(bp + 1);
 			} else {
 				DPRINTK(1, "size over :: ssid size=%d\n",
 					*(bp + 1));
-				ap->ssid.size = SSID_MAX_SIZE;
+				ap->ssid.size = IEEE80211_MAX_SSID_LEN;
 			}
 			memcpy(ap->ssid.body, bp + 2, ap->ssid.size);
 			break;
-		case 1:	/* rate */
-		case 50:	/* ext rate */
+		case WLAN_EID_SUPP_RATES:
+		case WLAN_EID_EXT_SUPP_RATES:
 			if ((*(bp + 1) + ap->rate_set.size) <=
 			    RATE_SET_MAX_SIZE) {
 				memcpy(&ap->rate_set.body[ap->rate_set.size],
@@ -271,9 +279,9 @@ int get_ap_information(struct ks_wlan_private *priv, struct ap_info_t *ap_info,
 				    (RATE_SET_MAX_SIZE - ap->rate_set.size);
 			}
 			break;
-		case 3:	/* DS parameter */
+		case WLAN_EID_DS_PARAMS:
 			break;
-		case 48:	/* RSN(WPA2) */
+		case WLAN_EID_RSN:
 			ap->rsn_ie.id = *bp;
 			if (*(bp + 1) <= RSN_IE_BODY_MAX) {
 				ap->rsn_ie.size = *(bp + 1);
@@ -284,8 +292,8 @@ int get_ap_information(struct ks_wlan_private *priv, struct ap_info_t *ap_info,
 			}
 			memcpy(ap->rsn_ie.body, bp + 2, ap->rsn_ie.size);
 			break;
-		case 221:	/* WPA */
-			if (memcmp(bp + 2, "\x00\x50\xf2\x01", 4) == 0) {	/* WPA OUI check */
+		case WLAN_EID_VENDOR_SPECIFIC: /* WPA */
+			if (memcmp(bp + 2, CIPHER_ID_WPA_WEP40, 4) == 0) { /* WPA OUI check */
 				ap->wpa_ie.id = *bp;
 				if (*(bp + 1) <= RSN_IE_BODY_MAX) {
 					ap->wpa_ie.size = *(bp + 1);
@@ -300,18 +308,18 @@ int get_ap_information(struct ks_wlan_private *priv, struct ap_info_t *ap_info,
 			}
 			break;
 
-		case 2:	/* FH parameter */
-		case 4:	/* CF parameter */
-		case 5:	/* TIM */
-		case 6:	/* IBSS parameter */
-		case 7:	/* Country */
-		case 42:	/* ERP information */
-		case 47:	/* Reserve ID 47 Broadcom AP */
+		case WLAN_EID_FH_PARAMS:
+		case WLAN_EID_CF_PARAMS:
+		case WLAN_EID_TIM:
+		case WLAN_EID_IBSS_PARAMS:
+		case WLAN_EID_COUNTRY:
+		case WLAN_EID_ERP_INFO:
 			break;
 		default:
 			DPRINTK(4, "unknown Element ID=%d\n", *bp);
 			break;
 		}
+
 		offset += 2;	/* id & size field */
 		offset += *(bp + 1);	/* +size offset */
 		bp += (*(bp + 1) + 2);	/* pointer update */
@@ -839,7 +847,7 @@ void hostif_scan_indication(struct ks_wlan_private *priv)
 				   priv->aplist.ap[i].bssid, ETH_ALEN) != 0)
 				continue;
 
-			if (ap_info->frame_type == FRAME_TYPE_PROBE_RESP)
+			if (ap_info->frame_type == IEEE80211_STYPE_PROBE_RESP)
 				get_ap_information(priv, ap_info,
 						   &priv->aplist.ap[i]);
 			return;
@@ -1299,11 +1307,11 @@ err_kfree_skb:
 	return ret;
 }
 
-#define ps_confirm_wait_inc(priv)					 \
-	do {								 \
-		if (atomic_read(&priv->psstatus.status) > PS_ACTIVE_SET) \
-			atomic_inc(&priv->psstatus.confirm_wait);	 \
-	} while (0)
+static inline void ps_confirm_wait_inc(struct ks_wlan_private *priv)
+{
+	if (atomic_read(&priv->psstatus.status) > PS_ACTIVE_SET)
+		atomic_inc(&priv->psstatus.confirm_wait);
+}
 
 static
 void hostif_mib_get_request(struct ks_wlan_private *priv,
@@ -1373,11 +1381,28 @@ void hostif_start_request(struct ks_wlan_private *priv, unsigned char mode)
 	priv->scan_ind_count = 0;
 }
 
+static __le16 ks_wlan_cap(struct ks_wlan_private *priv)
+{
+	u16 capability = 0x0000;
+
+	if (priv->reg.preamble == SHORT_PREAMBLE) {
+		capability |= WLAN_CAPABILITY_SHORT_PREAMBLE;
+	}
+
+	capability &= ~(WLAN_CAPABILITY_PBCC);	/* pbcc not support */
+
+	if (priv->reg.phy_type != D_11B_ONLY_MODE) {
+		capability |= WLAN_CAPABILITY_SHORT_SLOT_TIME;
+		capability &= ~(WLAN_CAPABILITY_DSSS_OFDM);
+	}
+
+	return cpu_to_le16((uint16_t)capability);
+}
+
 static
 void hostif_ps_adhoc_set_request(struct ks_wlan_private *priv)
 {
 	struct hostif_ps_adhoc_set_request_t *pp;
-	u16 capability;
 
 	DPRINTK(3, "\n");
 
@@ -1390,20 +1415,9 @@ void hostif_ps_adhoc_set_request(struct ks_wlan_private *priv)
 	pp->scan_type = cpu_to_le16((uint16_t)(priv->reg.scan_type));
 	pp->channel = cpu_to_le16((uint16_t)(priv->reg.channel));
 	pp->rate_set.size = priv->reg.rate_set.size;
+	pp->capability = ks_wlan_cap(priv);
 	memcpy(&pp->rate_set.body[0], &priv->reg.rate_set.body[0],
 	       priv->reg.rate_set.size);
-
-	capability = 0x0000;
-	if (priv->reg.preamble == SHORT_PREAMBLE) {
-		/* short preamble */
-		capability |= BSS_CAP_SHORT_PREAMBLE;
-	}
-	capability &= ~(BSS_CAP_PBCC);	/* pbcc not support */
-	if (priv->reg.phy_type != D_11B_ONLY_MODE) {
-		capability |= BSS_CAP_SHORT_SLOT_TIME;	/* ShortSlotTime support */
-		capability &= ~(BSS_CAP_DSSS_OFDM);	/* DSSS OFDM */
-	}
-	pp->capability = cpu_to_le16((uint16_t)capability);
 
 	/* send to device request */
 	ps_confirm_wait_inc(priv);
@@ -1414,7 +1428,6 @@ static
 void hostif_infrastructure_set_request(struct ks_wlan_private *priv)
 {
 	struct hostif_infrastructure_set_request_t *pp;
-	u16 capability;
 
 	DPRINTK(3, "ssid.size=%d\n", priv->reg.ssid.size);
 
@@ -1431,18 +1444,7 @@ void hostif_infrastructure_set_request(struct ks_wlan_private *priv)
 	       priv->reg.rate_set.size);
 	pp->ssid.size = priv->reg.ssid.size;
 	memcpy(&pp->ssid.body[0], &priv->reg.ssid.body[0], priv->reg.ssid.size);
-
-	capability = 0x0000;
-	if (priv->reg.preamble == SHORT_PREAMBLE) {
-		/* short preamble */
-		capability |= BSS_CAP_SHORT_PREAMBLE;
-	}
-	capability &= ~(BSS_CAP_PBCC);	/* pbcc not support */
-	if (priv->reg.phy_type != D_11B_ONLY_MODE) {
-		capability |= BSS_CAP_SHORT_SLOT_TIME;	/* ShortSlotTime support */
-		capability &= ~(BSS_CAP_DSSS_OFDM);	/* DSSS OFDM not support */
-	}
-	pp->capability = cpu_to_le16((uint16_t)capability);
+	pp->capability = ks_wlan_cap(priv);
 	pp->beacon_lost_count =
 	    cpu_to_le16((uint16_t)(priv->reg.beacon_lost_count));
 	pp->auth_type = cpu_to_le16((uint16_t)(priv->reg.authenticate_type));
@@ -1475,7 +1477,6 @@ void hostif_infrastructure_set_request(struct ks_wlan_private *priv)
 static void hostif_infrastructure_set2_request(struct ks_wlan_private *priv)
 {
 	struct hostif_infrastructure_set2_request_t *pp;
-	u16 capability;
 
 	DPRINTK(2, "ssid.size=%d\n", priv->reg.ssid.size);
 
@@ -1492,18 +1493,7 @@ static void hostif_infrastructure_set2_request(struct ks_wlan_private *priv)
 	       priv->reg.rate_set.size);
 	pp->ssid.size = priv->reg.ssid.size;
 	memcpy(&pp->ssid.body[0], &priv->reg.ssid.body[0], priv->reg.ssid.size);
-
-	capability = 0x0000;
-	if (priv->reg.preamble == SHORT_PREAMBLE) {
-		/* short preamble */
-		capability |= BSS_CAP_SHORT_PREAMBLE;
-	}
-	capability &= ~(BSS_CAP_PBCC);	/* pbcc not support */
-	if (priv->reg.phy_type != D_11B_ONLY_MODE) {
-		capability |= BSS_CAP_SHORT_SLOT_TIME;	/* ShortSlotTime support */
-		capability &= ~(BSS_CAP_DSSS_OFDM);	/* DSSS OFDM not support */
-	}
-	pp->capability = cpu_to_le16((uint16_t)capability);
+	pp->capability = ks_wlan_cap(priv);
 	pp->beacon_lost_count =
 	    cpu_to_le16((uint16_t)(priv->reg.beacon_lost_count));
 	pp->auth_type = cpu_to_le16((uint16_t)(priv->reg.authenticate_type));
@@ -1539,7 +1529,6 @@ static
 void hostif_adhoc_set_request(struct ks_wlan_private *priv)
 {
 	struct hostif_adhoc_set_request_t *pp;
-	u16 capability;
 
 	DPRINTK(3, "\n");
 
@@ -1556,18 +1545,7 @@ void hostif_adhoc_set_request(struct ks_wlan_private *priv)
 	       priv->reg.rate_set.size);
 	pp->ssid.size = priv->reg.ssid.size;
 	memcpy(&pp->ssid.body[0], &priv->reg.ssid.body[0], priv->reg.ssid.size);
-
-	capability = 0x0000;
-	if (priv->reg.preamble == SHORT_PREAMBLE) {
-		/* short preamble */
-		capability |= BSS_CAP_SHORT_PREAMBLE;
-	}
-	capability &= ~(BSS_CAP_PBCC);	/* pbcc not support */
-	if (priv->reg.phy_type != D_11B_ONLY_MODE) {
-		capability |= BSS_CAP_SHORT_SLOT_TIME;	/* ShortSlotTime support */
-		capability &= ~(BSS_CAP_DSSS_OFDM);	/* DSSS OFDM not support */
-	}
-	pp->capability = cpu_to_le16((uint16_t)capability);
+	pp->capability = ks_wlan_cap(priv);
 
 	/* send to device request */
 	ps_confirm_wait_inc(priv);
@@ -1578,7 +1556,6 @@ static
 void hostif_adhoc_set2_request(struct ks_wlan_private *priv)
 {
 	struct hostif_adhoc_set2_request_t *pp;
-	u16 capability;
 
 	DPRINTK(3, "\n");
 
@@ -1594,18 +1571,7 @@ void hostif_adhoc_set2_request(struct ks_wlan_private *priv)
 	       priv->reg.rate_set.size);
 	pp->ssid.size = priv->reg.ssid.size;
 	memcpy(&pp->ssid.body[0], &priv->reg.ssid.body[0], priv->reg.ssid.size);
-
-	capability = 0x0000;
-	if (priv->reg.preamble == SHORT_PREAMBLE) {
-		/* short preamble */
-		capability |= BSS_CAP_SHORT_PREAMBLE;
-	}
-	capability &= ~(BSS_CAP_PBCC);	/* pbcc not support */
-	if (priv->reg.phy_type != D_11B_ONLY_MODE) {
-		capability |= BSS_CAP_SHORT_SLOT_TIME;	/* ShortSlotTime support */
-		capability &= ~(BSS_CAP_DSSS_OFDM);	/* DSSS OFDM not support */
-	}
-	pp->capability = cpu_to_le16((uint16_t)capability);
+	pp->capability = ks_wlan_cap(priv);
 
 	pp->channel_list.body[0] = priv->reg.channel;
 	pp->channel_list.size = 1;

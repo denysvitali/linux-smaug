@@ -1251,13 +1251,13 @@ static int brcmf_pcie_init_scratchbuffers(struct brcmf_pciedev_info *devinfo)
 	u64 address;
 	u32 addr;
 
-	devinfo->shared.scratch = dma_alloc_coherent(&devinfo->pdev->dev,
-		BRCMF_DMA_D2H_SCRATCH_BUF_LEN,
-		&devinfo->shared.scratch_dmahandle, GFP_KERNEL);
+	devinfo->shared.scratch =
+		dma_zalloc_coherent(&devinfo->pdev->dev,
+					BRCMF_DMA_D2H_SCRATCH_BUF_LEN,
+					&devinfo->shared.scratch_dmahandle,
+					GFP_KERNEL);
 	if (!devinfo->shared.scratch)
 		goto fail;
-
-	memset(devinfo->shared.scratch, 0, BRCMF_DMA_D2H_SCRATCH_BUF_LEN);
 
 	addr = devinfo->shared.tcm_base_address +
 	       BRCMF_SHARED_DMA_SCRATCH_ADDR_OFFSET;
@@ -1268,13 +1268,13 @@ static int brcmf_pcie_init_scratchbuffers(struct brcmf_pciedev_info *devinfo)
 	       BRCMF_SHARED_DMA_SCRATCH_LEN_OFFSET;
 	brcmf_pcie_write_tcm32(devinfo, addr, BRCMF_DMA_D2H_SCRATCH_BUF_LEN);
 
-	devinfo->shared.ringupd = dma_alloc_coherent(&devinfo->pdev->dev,
-		BRCMF_DMA_D2H_RINGUPD_BUF_LEN,
-		&devinfo->shared.ringupd_dmahandle, GFP_KERNEL);
+	devinfo->shared.ringupd =
+		dma_zalloc_coherent(&devinfo->pdev->dev,
+					BRCMF_DMA_D2H_RINGUPD_BUF_LEN,
+					&devinfo->shared.ringupd_dmahandle,
+					GFP_KERNEL);
 	if (!devinfo->shared.ringupd)
 		goto fail;
-
-	memset(devinfo->shared.ringupd, 0, BRCMF_DMA_D2H_RINGUPD_BUF_LEN);
 
 	addr = devinfo->shared.tcm_base_address +
 	       BRCMF_SHARED_DMA_RINGUPD_ADDR_OFFSET;
@@ -1581,24 +1581,6 @@ static void brcmf_pcie_release_resource(struct brcmf_pciedev_info *devinfo)
 }
 
 
-static int brcmf_pcie_attach_bus(struct brcmf_pciedev_info *devinfo)
-{
-	int ret;
-
-	/* Attach to the common driver interface */
-	ret = brcmf_attach(&devinfo->pdev->dev, devinfo->settings);
-	if (ret) {
-		brcmf_err("brcmf_attach failed\n");
-	} else {
-		ret = brcmf_bus_started(&devinfo->pdev->dev);
-		if (ret)
-			brcmf_err("dongle is not responding\n");
-	}
-
-	return ret;
-}
-
-
 static u32 brcmf_pcie_buscore_prep_addr(const struct pci_dev *pdev, u32 addr)
 {
 	u32 ret_addr;
@@ -1735,7 +1717,7 @@ static void brcmf_pcie_setup(struct device *dev, int ret,
 	init_waitqueue_head(&devinfo->mbdata_resp_wait);
 
 	brcmf_pcie_intr_enable(devinfo);
-	if (brcmf_pcie_attach_bus(devinfo) == 0)
+	if (brcmf_attach(&devinfo->pdev->dev, devinfo->settings) == 0)
 		return;
 
 	brcmf_pcie_bus_console_read(devinfo);

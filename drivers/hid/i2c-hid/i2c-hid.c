@@ -144,10 +144,10 @@ struct i2c_hid {
 						   * register of the HID
 						   * descriptor. */
 	unsigned int		bufsize;	/* i2c buffer size */
-	char			*inbuf;		/* Input buffer */
-	char			*rawbuf;	/* Raw Input buffer */
-	char			*cmdbuf;	/* Command buffer */
-	char			*argsbuf;	/* Command arguments buffer */
+	u8			*inbuf;		/* Input buffer */
+	u8			*rawbuf;	/* Raw Input buffer */
+	u8			*cmdbuf;	/* Command buffer */
+	u8			*argsbuf;	/* Command arguments buffer */
 
 	unsigned long		flags;		/* device flags */
 	unsigned long		quirks;		/* Various quirks */
@@ -455,7 +455,8 @@ out_unlock:
 
 static void i2c_hid_get_input(struct i2c_hid *ihid)
 {
-	int ret, ret_size;
+	int ret;
+	u32 ret_size;
 	int size = le16_to_cpu(ihid->hdesc.wMaxInputLength);
 
 	if (size > ihid->bufsize)
@@ -480,7 +481,7 @@ static void i2c_hid_get_input(struct i2c_hid *ihid)
 		return;
 	}
 
-	if (ret_size > size) {
+	if ((ret_size > size) || (ret_size <= 2)) {
 		dev_err(&ihid->client->dev, "%s: incomplete report (%d/%d)\n",
 			__func__, size, ret_size);
 		return;
@@ -891,10 +892,10 @@ static int i2c_hid_acpi_pdata(struct i2c_client *client,
 
 static void i2c_hid_acpi_fix_up_power(struct device *dev)
 {
-	acpi_handle handle = ACPI_HANDLE(dev);
 	struct acpi_device *adev;
 
-	if (handle && acpi_bus_get_device(handle, &adev) == 0)
+	adev = ACPI_COMPANION(dev);
+	if (adev)
 		acpi_device_fix_up_power(adev);
 }
 
@@ -934,11 +935,6 @@ static int i2c_hid_of_probe(struct i2c_client *client,
 	}
 	pdata->hid_descriptor_address = val;
 
-	ret = of_property_read_u32(dev->of_node, "post-power-on-delay-ms",
-				   &val);
-	if (!ret)
-		pdata->post_power_delay_ms = val;
-
 	return 0;
 }
 
@@ -954,6 +950,16 @@ static inline int i2c_hid_of_probe(struct i2c_client *client,
 	return -ENODEV;
 }
 #endif
+
+static void i2c_hid_fwnode_probe(struct i2c_client *client,
+				 struct i2c_hid_platform_data *pdata)
+{
+	u32 val;
+
+	if (!device_property_read_u32(&client->dev, "post-power-on-delay-ms",
+				      &val))
+		pdata->post_power_delay_ms = val;
+}
 
 static int i2c_hid_probe(struct i2c_client *client,
 			 const struct i2c_device_id *dev_id)
@@ -997,6 +1003,9 @@ static int i2c_hid_probe(struct i2c_client *client,
 	} else {
 		ihid->pdata = *platform_data;
 	}
+
+	/* Parse platform agnostic common properties from ACPI / device tree */
+	i2c_hid_fwnode_probe(client, &ihid->pdata);
 
 	ihid->pdata.supply = devm_regulator_get(&client->dev, "vdd");
 	if (IS_ERR(ihid->pdata.supply)) {

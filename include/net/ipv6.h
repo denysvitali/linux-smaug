@@ -22,6 +22,7 @@
 #include <net/flow.h>
 #include <net/flow_dissector.h>
 #include <net/snmp.h>
+#include <net/netns/hash.h>
 
 #define SIN6_LEN_RFC2133	24
 
@@ -104,8 +105,8 @@
 
 #define IPV6_ADDR_ANY		0x0000U
 
-#define IPV6_ADDR_UNICAST      	0x0001U	
-#define IPV6_ADDR_MULTICAST    	0x0002U	
+#define IPV6_ADDR_UNICAST	0x0001U
+#define IPV6_ADDR_MULTICAST	0x0002U
 
 #define IPV6_ADDR_LOOPBACK	0x0010U
 #define IPV6_ADDR_LINKLOCAL	0x0020U
@@ -446,7 +447,7 @@ ipv6_masked_addr_cmp(const struct in6_addr *a1, const struct in6_addr *m,
 #endif
 }
 
-static inline void ipv6_addr_prefix(struct in6_addr *pfx, 
+static inline void ipv6_addr_prefix(struct in6_addr *pfx,
 				    const struct in6_addr *addr,
 				    int plen)
 {
@@ -495,7 +496,7 @@ static inline void __ipv6_addr_set_half(__be32 *addr,
 	addr[1] = wl;
 }
 
-static inline void ipv6_addr_set(struct in6_addr *addr, 
+static inline void ipv6_addr_set(struct in6_addr *addr,
 				     __be32 w1, __be32 w2,
 				     __be32 w3, __be32 w4)
 {
@@ -674,6 +675,22 @@ static inline bool ipv6_addr_v4mapped(const struct in6_addr *a)
 					cpu_to_be32(0x0000ffff))) == 0UL;
 }
 
+static inline u32 ipv6_portaddr_hash(const struct net *net,
+				     const struct in6_addr *addr6,
+				     unsigned int port)
+{
+	unsigned int hash, mix = net_hash_mix(net);
+
+	if (ipv6_addr_any(addr6))
+		hash = jhash_1word(0, mix);
+	else if (ipv6_addr_v4mapped(addr6))
+		hash = jhash_1word((__force u32)addr6->s6_addr32[3], mix);
+	else
+		hash = jhash2((__force u32 *)addr6->s6_addr32, 4, mix);
+
+	return hash ^ port;
+}
+
 /*
  * Check for a RFC 4843 ORCHID address
  * (Overlay Routable Cryptographic Hash Identifiers)
@@ -715,7 +732,7 @@ static inline int __ipv6_addr_diff32(const void *token1, const void *token2, int
 	}
 
 	/*
-	 *	we should *never* get to this point since that 
+	 *	we should *never* get to this point since that
 	 *	would mean the addrs are equal
 	 *
 	 *	However, we do get to it 8) And exacly, when
@@ -1037,7 +1054,7 @@ void ipv6_local_rxpmtu(struct sock *sk, struct flowi6 *fl6, u32 mtu);
 
 int inet6_release(struct socket *sock);
 int inet6_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len);
-int inet6_getname(struct socket *sock, struct sockaddr *uaddr, int *uaddr_len,
+int inet6_getname(struct socket *sock, struct sockaddr *uaddr,
 		  int peer);
 int inet6_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg);
 

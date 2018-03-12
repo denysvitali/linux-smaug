@@ -112,6 +112,24 @@
 		method = "smc";
 	};
 
+	sound_spdif {
+		compatible = "simple-audio-card";
+		simple-audio-card,name = "On-board SPDIF";
+
+		simple-audio-card,cpu {
+			sound-dai = <&spdif>;
+		};
+
+		simple-audio-card,codec {
+			sound-dai = <&spdif_out>;
+		};
+	};
+
+	spdif_out: spdif-out {
+		#sound-dai-cells = <0>;
+		compatible = "linux,spdif-dit";
+	};
+
 	timer {
 		compatible = "arm,armv8-timer";
 		interrupts = <GIC_PPI 13
@@ -336,6 +354,11 @@
 				drive-strength = <40>;
 			};
 
+			spdif_tx_pin: spdif {
+				pins = "PH8";
+				function = "spdif";
+			};
+
 			spi0_pins: spi0 {
 				pins = "PC0", "PC1", "PC2", "PC3";
 				function = "spi0";
@@ -380,6 +403,50 @@
 				pins = "PD4", "PD5";
 				function = "uart4";
 			};
+		};
+
+		spdif: spdif@1c21000 {
+			#sound-dai-cells = <0>;
+			compatible = "allwinner,sun50i-a64-spdif",
+				     "allwinner,sun8i-h3-spdif";
+			reg = <0x01c21000 0x400>;
+			interrupts = <GIC_SPI 12 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&ccu CLK_BUS_SPDIF>, <&ccu CLK_SPDIF>;
+			resets = <&ccu RST_BUS_SPDIF>;
+			clock-names = "apb", "spdif";
+			dmas = <&dma 2>;
+			dma-names = "tx";
+			pinctrl-names = "default";
+			pinctrl-0 = <&spdif_tx_pin>;
+			status = "disabled";
+		};
+
+		i2s0: i2s@1c22000 {
+			#sound-dai-cells = <0>;
+			compatible = "allwinner,sun50i-a64-i2s",
+				     "allwinner,sun8i-h3-i2s";
+			reg = <0x01c22000 0x400>;
+			interrupts = <GIC_SPI 13 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&ccu CLK_BUS_I2S0>, <&ccu CLK_I2S0>;
+			clock-names = "apb", "mod";
+			resets = <&ccu RST_BUS_I2S0>;
+			dma-names = "rx", "tx";
+			dmas = <&dma 3>, <&dma 3>;
+			status = "disabled";
+		};
+
+		i2s1: i2s@1c22400 {
+			#sound-dai-cells = <0>;
+			compatible = "allwinner,sun50i-a64-i2s",
+				     "allwinner,sun8i-h3-i2s";
+			reg = <0x01c22400 0x400>;
+			interrupts = <GIC_SPI 14 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&ccu CLK_BUS_I2S1>, <&ccu CLK_I2S1>;
+			clock-names = "apb", "mod";
+			resets = <&ccu RST_BUS_I2S1>;
+			dma-names = "rx", "tx";
+			dmas = <&dma 4>, <&dma 4>;
+			status = "disabled";
 		};
 
 		uart0: serial@1c28000 {

@@ -154,6 +154,7 @@ config HARDENED_USERCOPY
 	bool "Harden memory copies between kernel and userspace"
 	depends on HAVE_HARDENED_USERCOPY_ALLOCATOR
 	select BUG
+	imply STRICT_DEVMEM
 	help
 	  This option checks for obviously wrong memory regions when
 	  copying memory to/from the kernel (via copy_to_user() and
@@ -162,6 +163,20 @@ config HARDENED_USERCOPY
 	  separately allocated pages, are not on the process stack,
 	  or are part of the kernel text. This kills entire classes
 	  of heap overflow exploits and similar kernel memory exposures.
+
+config HARDENED_USERCOPY_FALLBACK
+	bool "Allow usercopy whitelist violations to fallback to object size"
+	depends on HARDENED_USERCOPY
+	default y
+	help
+	  This is a temporary option that allows missing usercopy whitelists
+	  to be discovered via a WARN() to the kernel log, instead of
+	  rejecting the copy, falling back to non-whitelisted hardened
+	  usercopy that checks the slab allocation size instead of the
+	  whitelist size. This option will be removed once it seems like
+	  all missing usercopy whitelists have been identified and fixed.
+	  Booting with "slab_common.usercopy_fallback=Y/N" can change
+	  this setting.
 
 config HARDENED_USERCOPY_PAGESPAN
 	bool "Refuse to copy allocations that span multiple pages"
@@ -215,6 +230,38 @@ config STATIC_USERMODEHELPER_PATH
 
 	  If you wish for all usermode helper programs to be disabled,
 	  specify an empty string here (i.e. "").
+
+config LOCK_DOWN_KERNEL
+	bool "Allow the kernel to be 'locked down'"
+	help
+	  Allow the kernel to be locked down under certain circumstances, for
+	  instance if UEFI secure boot is enabled.  Locking down the kernel
+	  turns off various features that might otherwise allow access to the
+	  kernel image (eg. setting MSR registers).
+
+config ALLOW_LOCKDOWN_LIFT_BY_SYSRQ
+	bool "Allow the kernel lockdown to be lifted by SysRq"
+	depends on LOCK_DOWN_KERNEL
+	depends on MAGIC_SYSRQ
+	depends on X86
+	help
+	  Allow the lockdown on a kernel to be lifted, by pressing a SysRq key
+	  combination on a wired keyboard.
+
+config LOCK_DOWN_IN_EFI_SECURE_BOOT
+	bool "Lock down the kernel in EFI Secure Boot mode"
+	default n
+	select LOCK_DOWN_KERNEL
+	depends on EFI
+	help
+	  UEFI Secure Boot provides a mechanism for ensuring that the firmware
+	  will only load signed bootloaders and kernels.  Secure boot mode may
+	  be determined from EFI variables provided by the system firmware if
+	  not indicated by the boot parameters.
+
+	  Enabling this option turns on results in kernel lockdown being
+	  triggered if EFI Secure Boot is set.
+
 
 source security/selinux/Kconfig
 source security/smack/Kconfig

@@ -180,8 +180,8 @@ EXPORT_SYMBOL_GPL(usb_ep_alloc_request);
 void usb_ep_free_request(struct usb_ep *ep,
 				       struct usb_request *req)
 {
-	ep->ops->free_request(ep, req);
 	trace_usb_ep_free_request(ep, req, 0);
+	ep->ops->free_request(ep, req);
 }
 EXPORT_SYMBOL_GPL(usb_ep_free_request);
 
@@ -1417,7 +1417,7 @@ EXPORT_SYMBOL_GPL(usb_gadget_unregister_driver);
 
 /* ------------------------------------------------------------------------- */
 
-static ssize_t usb_udc_srp_store(struct device *dev,
+static ssize_t srp_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t n)
 {
 	struct usb_udc		*udc = container_of(dev, struct usb_udc, dev);
@@ -1427,9 +1427,9 @@ static ssize_t usb_udc_srp_store(struct device *dev,
 
 	return n;
 }
-static DEVICE_ATTR(srp, S_IWUSR, NULL, usb_udc_srp_store);
+static DEVICE_ATTR_WO(srp);
 
-static ssize_t usb_udc_softconn_store(struct device *dev,
+static ssize_t soft_connect_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t n)
 {
 	struct usb_udc		*udc = container_of(dev, struct usb_udc, dev);
@@ -1453,7 +1453,7 @@ static ssize_t usb_udc_softconn_store(struct device *dev,
 
 	return n;
 }
-static DEVICE_ATTR(soft_connect, S_IWUSR, NULL, usb_udc_softconn_store);
+static DEVICE_ATTR_WO(soft_connect);
 
 static ssize_t state_show(struct device *dev, struct device_attribute *attr,
 			  char *buf)
@@ -1482,7 +1482,7 @@ ssize_t name##_show(struct device *dev,					\
 		struct device_attribute *attr, char *buf)		\
 {									\
 	struct usb_udc *udc = container_of(dev, struct usb_udc, dev);	\
-	return snprintf(buf, PAGE_SIZE, "%s\n",				\
+	return scnprintf(buf, PAGE_SIZE, "%s\n",			\
 			usb_speed_string(udc->gadget->param));		\
 }									\
 static DEVICE_ATTR_RO(name)
@@ -1497,7 +1497,7 @@ ssize_t name##_show(struct device *dev,				\
 	struct usb_udc		*udc = container_of(dev, struct usb_udc, dev); \
 	struct usb_gadget	*gadget = udc->gadget;		\
 								\
-	return snprintf(buf, PAGE_SIZE, "%d\n", gadget->name);	\
+	return scnprintf(buf, PAGE_SIZE, "%d\n", gadget->name);	\
 }								\
 static DEVICE_ATTR_RO(name)
 

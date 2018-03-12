@@ -457,18 +457,6 @@ void __weak vmalloc_sync_all(void)
 {
 }
 
-/**
- *	alloc_vm_area - allocate a range of kernel address space
- *	@size:		size of the area
- *
- *	Returns:	NULL on failure, vm_struct on success
- *
- *	This function reserves a range of kernel address space, and
- *	allocates pagetables to map that range.  No actual mappings
- *	are created.  If the kernel address space is not shared
- *	between processes, it syncs the pagetable across all
- *	processes.
- */
 struct vm_struct *alloc_vm_area(size_t size, pte_t **ptes)
 {
 	BUG();
@@ -1788,13 +1776,6 @@ unsigned long arch_get_unmapped_area(struct file *file, unsigned long addr,
 	return -ENOMEM;
 }
 
-void unmap_mapping_range(struct address_space *mapping,
-			 loff_t const holebegin, loff_t const holelen,
-			 int even_cows)
-{
-}
-EXPORT_SYMBOL(unmap_mapping_range);
-
 int filemap_fault(struct vm_fault *vmf)
 {
 	BUG();
@@ -1843,7 +1824,7 @@ int __access_remote_vm(struct task_struct *tsk, struct mm_struct *mm,
 }
 
 /**
- * @access_remote_vm - access another process' address space
+ * access_remote_vm - access another process' address space
  * @mm:		the mm_struct of the target address space
  * @addr:	start address to access
  * @buf:	source or destination buffer

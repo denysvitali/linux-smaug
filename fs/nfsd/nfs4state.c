@@ -3590,6 +3590,7 @@ nfsd4_verify_open_stid(struct nfs4_stid *s)
 	switch (s->sc_type) {
 	default:
 		break;
+	case 0:
 	case NFS4_CLOSED_STID:
 	case NFS4_CLOSED_DELEG_STID:
 		ret = nfserr_bad_stateid;
@@ -5182,7 +5183,6 @@ nfsd4_free_lock_stateid(stateid_t *stateid, struct nfs4_stid *s)
 			    lockowner(stp->st_stateowner)))
 		goto out;
 
-	stp->st_stid.sc_type = NFS4_CLOSED_STID;
 	release_lock_stateid(stp);
 	ret = nfs_ok;
 
@@ -5481,15 +5481,26 @@ nfsd4_close(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		goto out; 
 
 	stp->st_stid.sc_type = NFS4_CLOSED_STID;
+
+	/*
+	 * Technically we don't _really_ have to increment or copy it, since
+	 * it should just be gone after this operation and we clobber the
+	 * copied value below, but we continue to do so here just to ensure
+	 * that racing ops see that there was a state change.
+	 */
 	nfs4_inc_and_copy_stateid(&close->cl_stateid, &stp->st_stid);
 
 	nfsd4_close_open_stateid(stp);
 	mutex_unlock(&stp->st_mutex);
 
-	/* See RFC5661 sectionm 18.2.4 */
-	if (stp->st_stid.sc_client->cl_minorversion)
-		memcpy(&close->cl_stateid, &close_stateid,
-				sizeof(close->cl_stateid));
+	/* v4.1+ suggests that we send a special stateid in here, since the
+	 * clients should just ignore this anyway. Since this is not useful
+	 * for v4.0 clients either, we set it to the special close_stateid
+	 * universally.
+	 *
+	 * See RFC5661 section 18.2.4, and RFC7530 section 16.2.5
+	 */
+	memcpy(&close->cl_stateid, &close_stateid, sizeof(close->cl_stateid));
 
 	/* put reference from nfs4_preprocess_seqid_op */
 	nfs4_put_stid(&stp->st_stid);
@@ -6078,10 +6089,8 @@ out:
 		 * If this is a new, never-before-used stateid, and we are
 		 * returning an error, then just go ahead and release it.
 		 */
-		if (status && new) {
-			lock_stp->st_stid.sc_type = NFS4_CLOSED_STID;
+		if (status && new)
 			release_lock_stateid(lock_stp);
-		}
 
 		mutex_unlock(&lock_stp->st_mutex);
 

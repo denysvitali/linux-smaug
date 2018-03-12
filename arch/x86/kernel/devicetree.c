@@ -2,7 +2,6 @@
 /*
  * Architecture specific OF callbacks.
  */
-#include <linux/bootmem.h>
 #include <linux/export.h>
 #include <linux/io.h>
 #include <linux/interrupt.h>
@@ -37,11 +36,6 @@ void __init early_init_dt_scan_chosen_arch(unsigned long node)
 void __init early_init_dt_add_memory_arch(u64 base, u64 size)
 {
 	BUG();
-}
-
-void * __init early_init_dt_alloc_memory_arch(u64 size, u64 align)
-{
-	return __alloc_bootmem(size, align, __pa(MAX_DMA_ADDRESS));
 }
 
 void __init add_dtb(u64 data)
@@ -265,7 +259,7 @@ static void __init dtb_apic_setup(void)
 	dtb_ioapic_setup();
 }
 
-#ifdef CONFIG_OF_FLATTREE
+#ifdef CONFIG_OF_EARLY_FLATTREE
 static void __init x86_flattree_get_config(void)
 {
 	u32 size, map_len;

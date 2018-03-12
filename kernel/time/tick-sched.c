@@ -405,30 +405,12 @@ static int tick_nohz_cpu_down(unsigned int cpu)
 	return 0;
 }
 
-static int tick_nohz_init_all(void)
-{
-	int err = -1;
-
-#ifdef CONFIG_NO_HZ_FULL_ALL
-	if (!alloc_cpumask_var(&tick_nohz_full_mask, GFP_KERNEL)) {
-		WARN(1, "NO_HZ: Can't allocate full dynticks cpumask\n");
-		return err;
-	}
-	err = 0;
-	cpumask_setall(tick_nohz_full_mask);
-	tick_nohz_full_running = true;
-#endif
-	return err;
-}
-
 void __init tick_nohz_init(void)
 {
 	int cpu, ret;
 
-	if (!tick_nohz_full_running) {
-		if (tick_nohz_init_all() < 0)
-			return;
-	}
+	if (!tick_nohz_full_running)
+		return;
 
 	/*
 	 * Full dynticks uses irq work to drive the tick rescheduling on safe
@@ -481,9 +463,16 @@ static int __init setup_tick_nohz(char *str)
 
 __setup("nohz=", setup_tick_nohz);
 
-int tick_nohz_tick_stopped(void)
+bool tick_nohz_tick_stopped(void)
 {
 	return __this_cpu_read(tick_cpu_sched.tick_stopped);
+}
+
+bool tick_nohz_tick_stopped_cpu(int cpu)
+{
+	struct tick_sched *ts = per_cpu_ptr(&tick_cpu_sched, cpu);
+
+	return ts->tick_stopped;
 }
 
 /**
@@ -740,12 +729,6 @@ static ktime_t tick_nohz_stop_sched_tick(struct tick_sched *ts,
 	} else if (!ts->do_timer_last) {
 		delta = KTIME_MAX;
 	}
-
-#ifdef CONFIG_NO_HZ_FULL
-	/* Limit the tick delta to the maximum scheduler deferment */
-	if (!ts->inidle)
-		delta = min(delta, scheduler_tick_max_deferment());
-#endif
 
 	/* Calculate the next expiry time */
 	if (delta < (KTIME_MAX - basemono))
@@ -1107,7 +1090,7 @@ static inline void tick_nohz_activate(struct tick_sched *ts, int mode)
 	ts->nohz_mode = mode;
 	/* One update is enough */
 	if (!test_and_set_bit(0, &tick_nohz_active))
-		timers_update_migration(true);
+		timers_update_nohz();
 }
 
 /**

@@ -6,7 +6,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2017, Intel Corp.
+ * Copyright (C) 2000 - 2018, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -346,6 +346,7 @@ acpi_status acpi_ds_get_package_arguments(union acpi_operand_object *obj_desc)
 	status = acpi_ds_execute_arguments(node, node,
 					   obj_desc->package.aml_length,
 					   obj_desc->package.aml_start);
+
 	return_ACPI_STATUS(status);
 }
 

@@ -1355,6 +1355,7 @@ static int init_dma_tx_desc_rings(struct net_device *dev)
 
 		tx_q->dirty_tx = 0;
 		tx_q->cur_tx = 0;
+		tx_q->mss = 0;
 
 		netdev_tx_reset_queue(netdev_get_tx_queue(priv->dev, queue));
 	}
@@ -1843,6 +1844,11 @@ static void stmmac_tx_clean(struct stmmac_priv *priv, u32 queue)
 		if (unlikely(status & tx_dma_own))
 			break;
 
+		/* Make sure descriptor fields are read after reading
+		 * the own bit.
+		 */
+		dma_rmb();
+
 		/* Just consider the last segment and ...*/
 		if (likely(!(status & tx_not_ls))) {
 			/* ... verify the status error condition */
@@ -1946,6 +1952,7 @@ static void stmmac_tx_err(struct stmmac_priv *priv, u32 chan)
 						     (i == DMA_TX_SIZE - 1));
 	tx_q->dirty_tx = 0;
 	tx_q->cur_tx = 0;
+	tx_q->mss = 0;
 	netdev_tx_reset_queue(netdev_get_tx_queue(priv->dev, chan));
 	stmmac_start_tx_dma(priv, chan);
 
@@ -2003,22 +2010,60 @@ static void stmmac_set_dma_operation_mode(struct stmmac_priv *priv, u32 txmode,
 static void stmmac_dma_interrupt(struct stmmac_priv *priv)
 {
 	u32 tx_channel_count = priv->plat->tx_queues_to_use;
-	int status;
+	u32 rx_channel_count = priv->plat->rx_queues_to_use;
+	u32 channels_to_check = tx_channel_count > rx_channel_count ?
+				tx_channel_count : rx_channel_count;
 	u32 chan;
+	bool poll_scheduled = false;
+	int status[channels_to_check];
 
-	for (chan = 0; chan < tx_channel_count; chan++) {
-		struct stmmac_rx_queue *rx_q = &priv->rx_queue[chan];
+	/* Each DMA channel can be used for rx and tx simultaneously, yet
+	 * napi_struct is embedded in struct stmmac_rx_queue rather than in a
+	 * stmmac_channel struct.
+	 * Because of this, stmmac_poll currently checks (and possibly wakes)
+	 * all tx queues rather than just a single tx queue.
+	 */
+	for (chan = 0; chan < channels_to_check; chan++)
+		status[chan] = priv->hw->dma->dma_interrupt(priv->ioaddr,
+							    &priv->xstats,
+							    chan);
 
-		status = priv->hw->dma->dma_interrupt(priv->ioaddr,
-						      &priv->xstats, chan);
-		if (likely((status & handle_rx)) || (status & handle_tx)) {
+	for (chan = 0; chan < rx_channel_count; chan++) {
+		if (likely(status[chan] & handle_rx)) {
+			struct stmmac_rx_queue *rx_q = &priv->rx_queue[chan];
+
 			if (likely(napi_schedule_prep(&rx_q->napi))) {
 				stmmac_disable_dma_irq(priv, chan);
 				__napi_schedule(&rx_q->napi);
+				poll_scheduled = true;
 			}
 		}
+	}
 
-		if (unlikely(status & tx_hard_error_bump_tc)) {
+	/* If we scheduled poll, we already know that tx queues will be checked.
+	 * If we didn't schedule poll, see if any DMA channel (used by tx) has a
+	 * completed transmission, if so, call stmmac_poll (once).
+	 */
+	if (!poll_scheduled) {
+		for (chan = 0; chan < tx_channel_count; chan++) {
+			if (status[chan] & handle_tx) {
+				/* It doesn't matter what rx queue we choose
+				 * here. We use 0 since it always exists.
+				 */
+				struct stmmac_rx_queue *rx_q =
+					&priv->rx_queue[0];
+
+				if (likely(napi_schedule_prep(&rx_q->napi))) {
+					stmmac_disable_dma_irq(priv, chan);
+					__napi_schedule(&rx_q->napi);
+				}
+				break;
+			}
+		}
+	}
+
+	for (chan = 0; chan < tx_channel_count; chan++) {
+		if (unlikely(status[chan] & tx_hard_error_bump_tc)) {
 			/* Try to bump up the dma threshold on this failure */
 			if (unlikely(priv->xstats.threshold != SF_DMA_MODE) &&
 			    (tc <= 256)) {
@@ -2035,7 +2080,7 @@ static void stmmac_dma_interrupt(struct stmmac_priv *priv)
 								    chan);
 				priv->xstats.threshold = tc;
 			}
-		} else if (unlikely(status == tx_hard_error)) {
+		} else if (unlikely(status[chan] == tx_hard_error)) {
 			stmmac_tx_err(priv, chan);
 		}
 	}
@@ -2392,7 +2437,7 @@ static void stmmac_mac_config_rx_queues_routing(struct stmmac_priv *priv)
 			continue;
 
 		packet = priv->plat->rx_queues_cfg[queue].pkt_route;
-		priv->hw->mac->rx_queue_prio(priv->hw, packet, queue);
+		priv->hw->mac->rx_queue_routing(priv->hw, packet, queue);
 	}
 }
 
@@ -2489,7 +2534,7 @@ static int stmmac_hw_setup(struct net_device *dev, bool init_ptp)
 	}
 
 	/* Initialize the MAC Core */
-	priv->hw->mac->core_init(priv->hw, dev->mtu);
+	priv->hw->mac->core_init(priv->hw, dev);
 
 	/* Initialize MTL*/
 	if (priv->synopsys_id >= DWMAC_CORE_4_00)
@@ -2594,7 +2639,6 @@ static int stmmac_open(struct net_device *dev)
 
 	priv->dma_buf_sz = STMMAC_ALIGN(buf_sz);
 	priv->rx_copybreak = STMMAC_RX_COPYBREAK;
-	priv->mss = 0;
 
 	ret = alloc_dma_desc_resources(priv);
 	if (ret < 0) {
@@ -2755,6 +2799,7 @@ static void stmmac_tso_allocator(struct stmmac_priv *priv, unsigned int des,
 
 	while (tmp_len > 0) {
 		tx_q->cur_tx = STMMAC_GET_ENTRY(tx_q->cur_tx, DMA_TX_SIZE);
+		WARN_ON(tx_q->tx_skbuff[tx_q->cur_tx]);
 		desc = tx_q->dma_tx + tx_q->cur_tx;
 
 		desc->des0 = cpu_to_le32(des + (total_len - tmp_len));
@@ -2834,11 +2879,12 @@ static netdev_tx_t stmmac_tso_xmit(struct sk_buff *skb, struct net_device *dev)
 	mss = skb_shinfo(skb)->gso_size;
 
 	/* set new MSS value if needed */
-	if (mss != priv->mss) {
+	if (mss != tx_q->mss) {
 		mss_desc = tx_q->dma_tx + tx_q->cur_tx;
 		priv->hw->desc->set_mss(mss_desc, mss);
-		priv->mss = mss;
+		tx_q->mss = mss;
 		tx_q->cur_tx = STMMAC_GET_ENTRY(tx_q->cur_tx, DMA_TX_SIZE);
+		WARN_ON(tx_q->tx_skbuff[tx_q->cur_tx]);
 	}
 
 	if (netif_msg_tx_queued(priv)) {
@@ -2849,6 +2895,7 @@ static netdev_tx_t stmmac_tso_xmit(struct sk_buff *skb, struct net_device *dev)
 	}
 
 	first_entry = tx_q->cur_tx;
+	WARN_ON(tx_q->tx_skbuff[first_entry]);
 
 	desc = tx_q->dma_tx + first_entry;
 	first = desc;
@@ -2888,7 +2935,6 @@ static netdev_tx_t stmmac_tso_xmit(struct sk_buff *skb, struct net_device *dev)
 
 		tx_q->tx_skbuff_dma[tx_q->cur_tx].buf = des;
 		tx_q->tx_skbuff_dma[tx_q->cur_tx].len = skb_frag_size(frag);
-		tx_q->tx_skbuff[tx_q->cur_tx] = NULL;
 		tx_q->tx_skbuff_dma[tx_q->cur_tx].map_as_page = true;
 	}
 
@@ -2942,14 +2988,21 @@ static netdev_tx_t stmmac_tso_xmit(struct sk_buff *skb, struct net_device *dev)
 			tcp_hdrlen(skb) / 4, (skb->len - proto_hdr_len));
 
 	/* If context desc is used to change MSS */
-	if (mss_desc)
+	if (mss_desc) {
+		/* Make sure that first descriptor has been completely
+		 * written, including its own bit. This is because MSS is
+		 * actually before first descriptor, so we need to make
+		 * sure that MSS's own bit is the last thing written.
+		 */
+		dma_wmb();
 		priv->hw->desc->set_tx_owner(mss_desc);
+	}
 
 	/* The own bit must be the latest setting done when prepare the
 	 * descriptor and then barrier is needed to make sure that
 	 * all is coherent before granting the DMA engine.
 	 */
-	dma_wmb();
+	wmb();
 
 	if (netif_msg_pktdata(priv)) {
 		pr_info("%s: curr=%d dirty=%d f=%d, e=%d, f_p=%p, nfrags %d\n",
@@ -3024,6 +3077,7 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	entry = tx_q->cur_tx;
 	first_entry = entry;
+	WARN_ON(tx_q->tx_skbuff[first_entry]);
 
 	csum_insertion = (skb->ip_summed == CHECKSUM_PARTIAL);
 
@@ -3052,6 +3106,7 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
 		bool last_segment = (i == (nfrags - 1));
 
 		entry = STMMAC_GET_ENTRY(entry, DMA_TX_SIZE);
+		WARN_ON(tx_q->tx_skbuff[entry]);
 
 		if (likely(priv->extend_desc))
 			desc = (struct dma_desc *)(tx_q->dma_etx + entry);
@@ -3062,8 +3117,6 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
 				       DMA_TO_DEVICE);
 		if (dma_mapping_error(priv->device, des))
 			goto dma_map_err; /* should reuse desc w/o issues */
-
-		tx_q->tx_skbuff[entry] = NULL;
 
 		tx_q->tx_skbuff_dma[entry].buf = des;
 		if (unlikely(priv->synopsys_id >= DWMAC_CORE_4_00))
@@ -3173,7 +3226,7 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
 		 * descriptor and then barrier is needed to make sure that
 		 * all is coherent before granting the DMA engine.
 		 */
-		dma_wmb();
+		wmb();
 	}
 
 	netdev_tx_sent_queue(netdev_get_tx_queue(dev, queue), skb->len);
@@ -3404,9 +3457,8 @@ static int stmmac_rx(struct stmmac_priv *priv, int limit, u32 queue)
 			if (netif_msg_rx_status(priv)) {
 				netdev_dbg(priv->dev, "\tdesc: %p [entry %d] buff=0x%x\n",
 					   p, entry, des);
-				if (frame_len > ETH_FRAME_LEN)
-					netdev_dbg(priv->dev, "frame size %d, COE: %d\n",
-						   frame_len, status);
+				netdev_dbg(priv->dev, "frame size %d, COE: %d\n",
+					   frame_len, status);
 			}
 
 			/* The zero-copy is always used for all the sizes
@@ -4399,6 +4451,7 @@ static void stmmac_reset_queues_param(struct stmmac_priv *priv)
 
 		tx_q->cur_tx = 0;
 		tx_q->dirty_tx = 0;
+		tx_q->mss = 0;
 	}
 }
 
@@ -4443,11 +4496,6 @@ int stmmac_resume(struct device *dev)
 	spin_lock_irqsave(&priv->lock, flags);
 
 	stmmac_reset_queues_param(priv);
-
-	/* reset private mss value to force mss context settings at
-	 * next tso xmit (only used for gmac4).
-	 */
-	priv->mss = 0;
 
 	stmmac_clear_descriptors(priv);
 

@@ -176,8 +176,7 @@ static int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 			/* If interface is set while binding, indices
 			 * must coincide.
 			 */
-			if (sk->sk_bound_dev_if &&
-			    sk->sk_bound_dev_if != usin->sin6_scope_id)
+			if (!sk_dev_equal_l3scope(sk, usin->sin6_scope_id))
 				return -EINVAL;
 
 			sk->sk_bound_dev_if = usin->sin6_scope_id;
@@ -943,7 +942,8 @@ static void tcp_v6_send_reset(const struct sock *sk, struct sk_buff *skb)
 
 	if (sk) {
 		oif = sk->sk_bound_dev_if;
-		trace_tcp_send_reset(sk, skb);
+		if (sk_fullsock(sk))
+			trace_tcp_send_reset(sk, skb);
 	}
 
 	tcp_v6_send_response(sk, skb, seq, ack_seq, 0, 0, 0, oif, key, 1, 0, 0);
@@ -1451,6 +1451,7 @@ process:
 
 	if (sk->sk_state == TCP_NEW_SYN_RECV) {
 		struct request_sock *req = inet_reqsk(sk);
+		bool req_stolen = false;
 		struct sock *nsk;
 
 		sk = req->rsk_listener;
@@ -1470,10 +1471,20 @@ process:
 			th = (const struct tcphdr *)skb->data;
 			hdr = ipv6_hdr(skb);
 			tcp_v6_fill_cb(skb, hdr, th);
-			nsk = tcp_check_req(sk, skb, req, false);
+			nsk = tcp_check_req(sk, skb, req, false, &req_stolen);
 		}
 		if (!nsk) {
 			reqsk_put(req);
+			if (req_stolen) {
+				/* Another cpu got exclusive access to req
+				 * and created a full blown socket.
+				 * Try to feed this packet to this socket
+				 * instead of discarding it.
+				 */
+				tcp_v6_restore_cb(skb);
+				sock_put(sk);
+				goto lookup;
+			}
 			goto discard_and_relse;
 		}
 		if (nsk == sk) {
@@ -1795,7 +1806,7 @@ static void get_tcp6_sock(struct seq_file *seq, struct sock *sp, int i)
 		timer_expires = jiffies;
 	}
 
-	state = sk_state_load(sp);
+	state = inet_sk_state_load(sp);
 	if (state == TCP_LISTEN)
 		rx_queue = sp->sk_ack_backlog;
 	else
@@ -1884,7 +1895,6 @@ out:
 }
 
 static const struct file_operations tcp6_afinfo_seq_fops = {
-	.owner   = THIS_MODULE,
 	.open    = tcp_seq_open,
 	.read    = seq_read,
 	.llseek  = seq_lseek,
@@ -1997,6 +2007,7 @@ static struct pernet_operations tcpv6_net_ops = {
 	.init	    = tcpv6_net_init,
 	.exit	    = tcpv6_net_exit,
 	.exit_batch = tcpv6_net_exit_batch,
+	.async	    = true,
 };
 
 int __init tcpv6_init(void)

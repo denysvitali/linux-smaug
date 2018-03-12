@@ -147,23 +147,13 @@ static int dw_mci_req_show(struct seq_file *s, void *v)
 
 	return 0;
 }
-
-static int dw_mci_req_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, dw_mci_req_show, inode->i_private);
-}
-
-static const struct file_operations dw_mci_req_fops = {
-	.owner		= THIS_MODULE,
-	.open		= dw_mci_req_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
+DEFINE_SHOW_ATTRIBUTE(dw_mci_req);
 
 static int dw_mci_regs_show(struct seq_file *s, void *v)
 {
 	struct dw_mci *host = s->private;
+
+	pm_runtime_get_sync(host->dev);
 
 	seq_printf(s, "STATUS:\t0x%08x\n", mci_readl(host, STATUS));
 	seq_printf(s, "RINTSTS:\t0x%08x\n", mci_readl(host, RINTSTS));
@@ -172,21 +162,11 @@ static int dw_mci_regs_show(struct seq_file *s, void *v)
 	seq_printf(s, "INTMASK:\t0x%08x\n", mci_readl(host, INTMASK));
 	seq_printf(s, "CLKENA:\t0x%08x\n", mci_readl(host, CLKENA));
 
+	pm_runtime_put_autosuspend(host->dev);
+
 	return 0;
 }
-
-static int dw_mci_regs_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, dw_mci_regs_show, inode->i_private);
-}
-
-static const struct file_operations dw_mci_regs_fops = {
-	.owner		= THIS_MODULE,
-	.open		= dw_mci_regs_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
+DEFINE_SHOW_ATTRIBUTE(dw_mci_regs);
 
 static void dw_mci_init_debugfs(struct dw_mci_slot *slot)
 {
@@ -409,7 +389,9 @@ static inline void dw_mci_set_cto(struct dw_mci *host)
 	cto_div = (mci_readl(host, CLKDIV) & 0xff) * 2;
 	if (cto_div == 0)
 		cto_div = 1;
-	cto_ms = DIV_ROUND_UP(MSEC_PER_SEC * cto_clks * cto_div, host->bus_hz);
+
+	cto_ms = DIV_ROUND_UP_ULL((u64)MSEC_PER_SEC * cto_clks * cto_div,
+				  host->bus_hz);
 
 	/* add a bit spare time */
 	cto_ms += 10;
@@ -1944,8 +1926,9 @@ static void dw_mci_set_drto(struct dw_mci *host)
 	drto_div = (mci_readl(host, CLKDIV) & 0xff) * 2;
 	if (drto_div == 0)
 		drto_div = 1;
-	drto_ms = DIV_ROUND_UP(MSEC_PER_SEC * drto_clks * drto_div,
-			       host->bus_hz);
+
+	drto_ms = DIV_ROUND_UP_ULL((u64)MSEC_PER_SEC * drto_clks * drto_div,
+				   host->bus_hz);
 
 	/* add a bit spare time */
 	drto_ms += 10;
@@ -2021,7 +2004,6 @@ static void dw_mci_tasklet_func(unsigned long priv)
 			set_bit(EVENT_CMD_COMPLETE, &host->completed_events);
 			err = dw_mci_command_complete(host, cmd);
 			if (cmd == mrq->sbc && !err) {
-				prev_state = state = STATE_SENDING_CMD;
 				__dw_mci_start_request(host, host->slot,
 						       mrq->cmd);
 				goto unlock;
@@ -2778,12 +2760,57 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+static int dw_mci_init_slot_caps(struct dw_mci_slot *slot)
+{
+	struct dw_mci *host = slot->host;
+	const struct dw_mci_drv_data *drv_data = host->drv_data;
+	struct mmc_host *mmc = slot->mmc;
+	int ctrl_id;
+
+	if (host->pdata->caps)
+		mmc->caps = host->pdata->caps;
+
+	/*
+	 * Support MMC_CAP_ERASE by default.
+	 * It needs to use trim/discard/erase commands.
+	 */
+	mmc->caps |= MMC_CAP_ERASE;
+
+	if (host->pdata->pm_caps)
+		mmc->pm_caps = host->pdata->pm_caps;
+
+	if (host->dev->of_node) {
+		ctrl_id = of_alias_get_id(host->dev->of_node, "mshc");
+		if (ctrl_id < 0)
+			ctrl_id = 0;
+	} else {
+		ctrl_id = to_platform_device(host->dev)->id;
+	}
+
+	if (drv_data && drv_data->caps) {
+		if (ctrl_id >= drv_data->num_caps) {
+			dev_err(host->dev, "invalid controller id %d\n",
+				ctrl_id);
+			return -EINVAL;
+		}
+		mmc->caps |= drv_data->caps[ctrl_id];
+	}
+
+	if (host->pdata->caps2)
+		mmc->caps2 = host->pdata->caps2;
+
+	/* Process SDIO IRQs through the sdio_irq_work. */
+	if (mmc->caps & MMC_CAP_SDIO_IRQ)
+		mmc->caps2 |= MMC_CAP2_SDIO_IRQ_NOTHREAD;
+
+	return 0;
+}
+
 static int dw_mci_init_slot(struct dw_mci *host)
 {
 	struct mmc_host *mmc;
 	struct dw_mci_slot *slot;
-	const struct dw_mci_drv_data *drv_data = host->drv_data;
-	int ctrl_id, ret;
+	int ret;
 	u32 freq[2];
 
 	mmc = mmc_alloc_host(sizeof(struct dw_mci_slot), host->dev);
@@ -2817,38 +2844,13 @@ static int dw_mci_init_slot(struct dw_mci *host)
 	if (!mmc->ocr_avail)
 		mmc->ocr_avail = MMC_VDD_32_33 | MMC_VDD_33_34;
 
-	if (host->pdata->caps)
-		mmc->caps = host->pdata->caps;
-
-	/*
-	 * Support MMC_CAP_ERASE by default.
-	 * It needs to use trim/discard/erase commands.
-	 */
-	mmc->caps |= MMC_CAP_ERASE;
-
-	if (host->pdata->pm_caps)
-		mmc->pm_caps = host->pdata->pm_caps;
-
-	if (host->dev->of_node) {
-		ctrl_id = of_alias_get_id(host->dev->of_node, "mshc");
-		if (ctrl_id < 0)
-			ctrl_id = 0;
-	} else {
-		ctrl_id = to_platform_device(host->dev)->id;
-	}
-	if (drv_data && drv_data->caps)
-		mmc->caps |= drv_data->caps[ctrl_id];
-
-	if (host->pdata->caps2)
-		mmc->caps2 = host->pdata->caps2;
-
 	ret = mmc_of_parse(mmc);
 	if (ret)
 		goto err_host_allocated;
 
-	/* Process SDIO IRQs through the sdio_irq_work. */
-	if (mmc->caps & MMC_CAP_SDIO_IRQ)
-		mmc->caps2 |= MMC_CAP2_SDIO_IRQ_NOTHREAD;
+	ret = dw_mci_init_slot_caps(slot);
+	if (ret)
+		goto err_host_allocated;
 
 	/* Useful defaults if platform data is unset. */
 	if (host->use_dma == TRANS_MODE_IDMAC) {

@@ -1425,7 +1425,6 @@ static int arp_seq_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations arp_seq_fops = {
-	.owner		= THIS_MODULE,
 	.open           = arp_seq_open,
 	.read           = seq_read,
 	.llseek         = seq_lseek,
@@ -1448,6 +1447,7 @@ static void __net_exit arp_net_exit(struct net *net)
 static struct pernet_operations arp_net_ops = {
 	.init = arp_net_init,
 	.exit = arp_net_exit,
+	.async = true,
 };
 
 static int __init arp_proc_init(void)

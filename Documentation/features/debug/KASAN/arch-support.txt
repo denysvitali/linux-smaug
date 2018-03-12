@@ -19,7 +19,6 @@
     |        ia64: | TODO |
     |        m32r: | TODO |
     |        m68k: | TODO |
-    |       metag: | TODO |
     |  microblaze: | TODO |
     |        mips: | TODO |
     |     mn10300: | TODO |
@@ -35,5 +34,5 @@
     |          um: | TODO |
     |   unicore32: | TODO |
     |         x86: |  ok  | 64-bit only
-    |      xtensa: | TODO |
+    |      xtensa: |  ok  |
     -----------------------

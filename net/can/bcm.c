@@ -246,7 +246,6 @@ static int bcm_proc_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations bcm_proc_fops = {
-	.owner		= THIS_MODULE,
 	.open		= bcm_proc_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
@@ -1718,6 +1717,7 @@ static void canbcm_pernet_exit(struct net *net)
 static struct pernet_operations canbcm_pernet_ops __read_mostly = {
 	.init = canbcm_pernet_init,
 	.exit = canbcm_pernet_exit,
+	.async = true,
 };
 
 static int __init bcm_module_init(void)

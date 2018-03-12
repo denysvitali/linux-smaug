@@ -137,7 +137,7 @@ static void dwc2_set_stm32f4x9_fsotg_params(struct dwc2_hsotg *hsotg)
 	p->activate_stm_fs_transceiver = true;
 }
 
-static void dwc2_set_stm32f7xx_hsotg_params(struct dwc2_hsotg *hsotg)
+static void dwc2_set_stm32f7_hsotg_params(struct dwc2_hsotg *hsotg)
 {
 	struct dwc2_core_params *p = &hsotg->params;
 
@@ -164,8 +164,8 @@ const struct of_device_id dwc2_of_match_table[] = {
 	{ .compatible = "st,stm32f4x9-fsotg",
 	  .data = dwc2_set_stm32f4x9_fsotg_params },
 	{ .compatible = "st,stm32f4x9-hsotg" },
-	{ .compatible = "st,stm32f7xx-hsotg",
-	  .data = dwc2_set_stm32f7xx_hsotg_params },
+	{ .compatible = "st,stm32f7-hsotg",
+	  .data = dwc2_set_stm32f7_hsotg_params },
 	{},
 };
 MODULE_DEVICE_TABLE(of, dwc2_of_match_table);
@@ -272,15 +272,21 @@ static void dwc2_set_default_params(struct dwc2_hsotg *hsotg)
 	p->enable_dynamic_fifo = hw->enable_dynamic_fifo;
 	p->en_multiple_tx_fifo = hw->en_multiple_tx_fifo;
 	p->i2c_enable = hw->i2c_enable;
+	p->acg_enable = hw->acg_enable;
 	p->ulpi_fs_ls = false;
 	p->ts_dline = false;
 	p->reload_ctl = (hw->snpsid >= DWC2_CORE_REV_2_92a);
 	p->uframe_sched = true;
 	p->external_id_pin_ctl = false;
 	p->hibernation = false;
+	p->lpm = true;
+	p->lpm_clock_gating = true;
+	p->besl = true;
+	p->hird_threshold_en = true;
+	p->hird_threshold = 4;
 	p->max_packet_count = hw->max_packet_count;
 	p->max_transfer_size = hw->max_transfer_size;
-	p->ahbcfg = GAHBCFG_HBSTLEN_INCR4 << GAHBCFG_HBSTLEN_SHIFT;
+	p->ahbcfg = GAHBCFG_HBSTLEN_INCR << GAHBCFG_HBSTLEN_SHIFT;
 
 	if ((hsotg->dr_mode == USB_DR_MODE_HOST) ||
 	    (hsotg->dr_mode == USB_DR_MODE_OTG)) {
@@ -526,7 +532,15 @@ static void dwc2_check_params(struct dwc2_hsotg *hsotg)
 	CHECK_BOOL(enable_dynamic_fifo, hw->enable_dynamic_fifo);
 	CHECK_BOOL(en_multiple_tx_fifo, hw->en_multiple_tx_fifo);
 	CHECK_BOOL(i2c_enable, hw->i2c_enable);
+	CHECK_BOOL(acg_enable, hw->acg_enable);
 	CHECK_BOOL(reload_ctl, (hsotg->hw_params.snpsid > DWC2_CORE_REV_2_92a));
+	CHECK_BOOL(lpm, (hsotg->hw_params.snpsid >= DWC2_CORE_REV_2_80a));
+	CHECK_BOOL(lpm, hw->lpm_mode);
+	CHECK_BOOL(lpm_clock_gating, hsotg->params.lpm);
+	CHECK_BOOL(besl, hsotg->params.lpm);
+	CHECK_BOOL(besl, (hsotg->hw_params.snpsid >= DWC2_CORE_REV_3_00a));
+	CHECK_BOOL(hird_threshold_en, hsotg->params.lpm);
+	CHECK_RANGE(hird_threshold, 0, hsotg->params.besl ? 12 : 7, 0);
 	CHECK_RANGE(max_packet_count,
 		    15, hw->max_packet_count,
 		    hw->max_packet_count);
@@ -646,14 +660,13 @@ int dwc2_get_hwparams(struct dwc2_hsotg *hsotg)
 	/*
 	 * Attempt to ensure this device is really a DWC_otg Controller.
 	 * Read and verify the GSNPSID register contents. The value should be
-	 * 0x45f42xxx or 0x45f43xxx, which corresponds to either "OT2" or "OT3",
-	 * as in "OTG version 2.xx" or "OTG version 3.xx".
+	 * 0x45f4xxxx, 0x5531xxxx or 0x5532xxxx
 	 */
+
 	hw->snpsid = dwc2_readl(hsotg->regs + GSNPSID);
-	if ((hw->snpsid & 0xfffff000) != 0x4f542000 &&
-	    (hw->snpsid & 0xfffff000) != 0x4f543000 &&
-	    (hw->snpsid & 0xffff0000) != 0x55310000 &&
-	    (hw->snpsid & 0xffff0000) != 0x55320000) {
+	if ((hw->snpsid & GSNPSID_ID_MASK) != DWC2_OTG_ID &&
+	    (hw->snpsid & GSNPSID_ID_MASK) != DWC2_FS_IOT_ID &&
+	    (hw->snpsid & GSNPSID_ID_MASK) != DWC2_HS_IOT_ID) {
 		dev_err(hsotg->dev, "Bad value for GSNPSID: 0x%08x\n",
 			hw->snpsid);
 		return -ENODEV;
@@ -706,6 +719,7 @@ int dwc2_get_hwparams(struct dwc2_hsotg *hsotg)
 	hw->i2c_enable = !!(hwcfg3 & GHWCFG3_I2C);
 	hw->total_fifo_size = (hwcfg3 & GHWCFG3_DFIFO_DEPTH_MASK) >>
 			      GHWCFG3_DFIFO_DEPTH_SHIFT;
+	hw->lpm_mode = !!(hwcfg3 & GHWCFG3_OTG_LPM_EN);
 
 	/* hwcfg4 */
 	hw->en_multiple_tx_fifo = !!(hwcfg4 & GHWCFG4_DED_FIFO_EN);
@@ -717,6 +731,7 @@ int dwc2_get_hwparams(struct dwc2_hsotg *hsotg)
 	hw->power_optimized = !!(hwcfg4 & GHWCFG4_POWER_OPTIMIZ);
 	hw->utmi_phy_data_width = (hwcfg4 & GHWCFG4_UTMI_PHY_DATA_WIDTH_MASK) >>
 				  GHWCFG4_UTMI_PHY_DATA_WIDTH_SHIFT;
+	hw->acg_enable = !!(hwcfg4 & GHWCFG4_ACG_SUPPORTED);
 
 	/* fifo sizes */
 	hw->rx_fifo_size = (grxfsiz & GRXFSIZ_DEPTH_MASK) >>

@@ -422,11 +422,13 @@ void init_rcu_head(struct rcu_head *head)
 {
 	debug_object_init(head, &rcuhead_debug_descr);
 }
+EXPORT_SYMBOL_GPL(init_rcu_head);
 
 void destroy_rcu_head(struct rcu_head *head)
 {
 	debug_object_free(head, &rcuhead_debug_descr);
 }
+EXPORT_SYMBOL_GPL(destroy_rcu_head);
 
 static bool rcuhead_is_static_object(void *addr)
 {
@@ -622,7 +624,7 @@ EXPORT_SYMBOL_GPL(call_rcu_tasks);
  * grace period has elapsed, in other words after all currently
  * executing rcu-tasks read-side critical sections have elapsed.  These
  * read-side critical sections are delimited by calls to schedule(),
- * cond_resched_rcu_qs(), idle execution, userspace execution, calls
+ * cond_resched_tasks_rcu_qs(), idle execution, userspace execution, calls
  * to synchronize_rcu_tasks(), and (in theory, anyway) cond_resched().
  *
  * This is a very specialized primitive, intended only for a few uses in

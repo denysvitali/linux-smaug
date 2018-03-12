@@ -1684,11 +1684,6 @@ static int mt9m114_t_vflip(struct v4l2_subdev *sd, int value)
 
 	return !!err;
 }
-static int mt9m114_s_parm(struct v4l2_subdev *sd,
-			struct v4l2_streamparm *param)
-{
-	return 0;
-}
 
 static int mt9m114_g_frame_interval(struct v4l2_subdev *sd,
 				   struct v4l2_subdev_frame_interval *interval)
@@ -1781,7 +1776,6 @@ static int mt9m114_g_skip_frames(struct v4l2_subdev *sd, u32 *frames)
 }
 
 static const struct v4l2_subdev_video_ops mt9m114_video_ops = {
-	.s_parm = mt9m114_s_parm,
 	.s_stream = mt9m114_s_stream,
 	.g_frame_interval = mt9m114_g_frame_interval,
 };
@@ -1844,11 +1838,9 @@ static int mt9m114_probe(struct i2c_client *client)
 		return -ENOMEM;
 
 	v4l2_i2c_subdev_init(&dev->sd, client, &mt9m114_ops);
-	pdata = client->dev.platform_data;
-	if (ACPI_COMPANION(&client->dev))
-		pdata = gmin_camera_platform_data(&dev->sd,
-						  ATOMISP_INPUT_FORMAT_RAW_10,
-						  atomisp_bayer_order_grbg);
+	pdata = gmin_camera_platform_data(&dev->sd,
+					  ATOMISP_INPUT_FORMAT_RAW_10,
+					  atomisp_bayer_order_grbg);
 	if (pdata)
 		ret = mt9m114_s_config(&dev->sd, client->irq, pdata);
 	if (!pdata || ret) {

@@ -911,7 +911,7 @@ out_err:
 out_busy:
 	blk_mq_stop_hw_queue(hctx);
 	spin_unlock_irqrestore(&rinfo->ring_lock, flags);
-	return BLK_STS_RESOURCE;
+	return BLK_STS_DEV_RESOURCE;
 }
 
 static void blkif_complete_rq(struct request *rq)
@@ -931,15 +931,15 @@ static void blkif_set_queue_limits(struct blkfront_info *info)
 	unsigned int segments = info->max_indirect_segments ? :
 				BLKIF_MAX_SEGMENTS_PER_REQUEST;
 
-	queue_flag_set_unlocked(QUEUE_FLAG_VIRT, rq);
+	blk_queue_flag_set(QUEUE_FLAG_VIRT, rq);
 
 	if (info->feature_discard) {
-		queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, rq);
+		blk_queue_flag_set(QUEUE_FLAG_DISCARD, rq);
 		blk_queue_max_discard_sectors(rq, get_capacity(gd));
 		rq->limits.discard_granularity = info->discard_granularity;
 		rq->limits.discard_alignment = info->discard_alignment;
 		if (info->feature_secdiscard)
-			queue_flag_set_unlocked(QUEUE_FLAG_SECERASE, rq);
+			blk_queue_flag_set(QUEUE_FLAG_SECERASE, rq);
 	}
 
 	/* Hard sector size and max sectors impersonate the equiv. hardware. */
@@ -1610,8 +1610,8 @@ static irqreturn_t blkif_interrupt(int irq, void *dev_id)
 				blkif_req(req)->error = BLK_STS_NOTSUPP;
 				info->feature_discard = 0;
 				info->feature_secdiscard = 0;
-				queue_flag_clear(QUEUE_FLAG_DISCARD, rq);
-				queue_flag_clear(QUEUE_FLAG_SECERASE, rq);
+				blk_queue_flag_clear(QUEUE_FLAG_DISCARD, rq);
+				blk_queue_flag_clear(QUEUE_FLAG_SECERASE, rq);
 			}
 			break;
 		case BLKIF_OP_FLUSH_DISKCACHE:

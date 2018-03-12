@@ -512,9 +512,7 @@ static int ila_nl_dump(struct sk_buff *skb, struct netlink_callback *cb)
 	struct ila_map *ila;
 	int ret;
 
-	ret = rhashtable_walk_start(rhiter);
-	if (ret && ret != -EAGAIN)
-		goto done;
+	rhashtable_walk_start(rhiter);
 
 	for (;;) {
 		ila = rhashtable_walk_next(rhiter);
@@ -615,6 +613,7 @@ static struct pernet_operations ila_net_ops = {
 	.exit = ila_exit_net,
 	.id   = &ila_net_id,
 	.size = sizeof(struct ila_net),
+	.async = true,
 };
 
 static int ila_xlat_addr(struct sk_buff *skb, bool sir2ila)

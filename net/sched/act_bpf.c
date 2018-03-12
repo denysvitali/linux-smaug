@@ -272,7 +272,7 @@ static void tcf_bpf_prog_fill_cfg(const struct tcf_bpf *prog,
 
 static int tcf_bpf_init(struct net *net, struct nlattr *nla,
 			struct nlattr *est, struct tc_action **act,
-			int replace, int bind)
+			int replace, int bind, struct netlink_ext_ack *extack)
 {
 	struct tc_action_net *tn = net_generic(net, bpf_net_id);
 	struct nlattr *tb[TCA_ACT_BPF_MAX + 1];
@@ -357,7 +357,7 @@ out:
 	return ret;
 }
 
-static void tcf_bpf_cleanup(struct tc_action *act, int bind)
+static void tcf_bpf_cleanup(struct tc_action *act)
 {
 	struct tcf_bpf_cfg tmp;
 
@@ -367,14 +367,16 @@ static void tcf_bpf_cleanup(struct tc_action *act, int bind)
 
 static int tcf_bpf_walker(struct net *net, struct sk_buff *skb,
 			  struct netlink_callback *cb, int type,
-			  const struct tc_action_ops *ops)
+			  const struct tc_action_ops *ops,
+			  struct netlink_ext_ack *extack)
 {
 	struct tc_action_net *tn = net_generic(net, bpf_net_id);
 
-	return tcf_generic_walker(tn, skb, cb, type, ops);
+	return tcf_generic_walker(tn, skb, cb, type, ops, extack);
 }
 
-static int tcf_bpf_search(struct net *net, struct tc_action **a, u32 index)
+static int tcf_bpf_search(struct net *net, struct tc_action **a, u32 index,
+			  struct netlink_ext_ack *extack)
 {
 	struct tc_action_net *tn = net_generic(net, bpf_net_id);
 
@@ -401,18 +403,17 @@ static __net_init int bpf_init_net(struct net *net)
 	return tc_action_net_init(tn, &act_bpf_ops);
 }
 
-static void __net_exit bpf_exit_net(struct net *net)
+static void __net_exit bpf_exit_net(struct list_head *net_list)
 {
-	struct tc_action_net *tn = net_generic(net, bpf_net_id);
-
-	tc_action_net_exit(tn);
+	tc_action_net_exit(net_list, bpf_net_id);
 }
 
 static struct pernet_operations bpf_net_ops = {
 	.init = bpf_init_net,
-	.exit = bpf_exit_net,
+	.exit_batch = bpf_exit_net,
 	.id   = &bpf_net_id,
 	.size = sizeof(struct tc_action_net),
+	.async = true,
 };
 
 static int __init bpf_init_module(void)

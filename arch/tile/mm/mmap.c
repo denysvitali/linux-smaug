@@ -30,9 +30,10 @@
 #define MIN_GAP (128*1024*1024)
 #define MAX_GAP (TASK_SIZE/6*5)
 
-static inline unsigned long mmap_base(struct mm_struct *mm)
+static inline unsigned long mmap_base(struct mm_struct *mm,
+				      struct rlimit *rlim_stack)
 {
-	unsigned long gap = rlimit(RLIMIT_STACK);
+	unsigned long gap = rlim_stack->rlim_cur;
 	unsigned long random_factor = 0;
 
 	if (current->flags & PF_RANDOMIZE)
@@ -50,7 +51,7 @@ static inline unsigned long mmap_base(struct mm_struct *mm)
  * This function, called very early during the creation of a new
  * process VM image, sets up which VM layout function to use:
  */
-void arch_pick_mmap_layout(struct mm_struct *mm)
+void arch_pick_mmap_layout(struct mm_struct *mm, struct rlimit *rlim_stack)
 {
 #if !defined(__tilegx__)
 	int is_32bit = 1;
@@ -78,11 +79,11 @@ void arch_pick_mmap_layout(struct mm_struct *mm)
 	 * Use standard layout if the expected stack growth is unlimited
 	 * or we are running native 64 bits.
 	 */
-	if (rlimit(RLIMIT_STACK) == RLIM_INFINITY) {
+	if (rlim_stack->rlim_cur == RLIM_INFINITY) {
 		mm->mmap_base = TASK_UNMAPPED_BASE + random_factor;
 		mm->get_unmapped_area = arch_get_unmapped_area;
 	} else {
-		mm->mmap_base = mmap_base(mm);
+		mm->mmap_base = mmap_base(mm, rlim_stack);
 		mm->get_unmapped_area = arch_get_unmapped_area_topdown;
 	}
 }

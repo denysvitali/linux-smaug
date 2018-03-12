@@ -527,7 +527,7 @@ void ndisc_send_na(struct net_device *dev, const struct in6_addr *daddr,
 	}
 
 	if (!dev->addr_len)
-		inc_opt = 0;
+		inc_opt = false;
 	if (inc_opt)
 		optlen += ndisc_opt_addr_space(dev,
 					       NDISC_NEIGHBOUR_ADVERTISEMENT);
@@ -566,6 +566,11 @@ static void ndisc_send_unsol_na(struct net_device *dev)
 
 	read_lock_bh(&idev->lock);
 	list_for_each_entry(ifa, &idev->addr_list, if_list) {
+		/* skip tentative addresses until dad completes */
+		if (ifa->flags & IFA_F_TENTATIVE &&
+		    !(ifa->flags & IFA_F_OPTIMISTIC))
+			continue;
+
 		ndisc_send_na(dev, &in6addr_linklocal_allnodes, &ifa->addr,
 			      /*router=*/ !!idev->cnf.forwarding,
 			      /*solicited=*/ false, /*override=*/ true,
@@ -1877,6 +1882,7 @@ static void __net_exit ndisc_net_exit(struct net *net)
 static struct pernet_operations ndisc_net_ops = {
 	.init = ndisc_net_init,
 	.exit = ndisc_net_exit,
+	.async = true,
 };
 
 int __init ndisc_init(void)

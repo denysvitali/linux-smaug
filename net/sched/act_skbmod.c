@@ -84,7 +84,7 @@ static const struct nla_policy skbmod_policy[TCA_SKBMOD_MAX + 1] = {
 
 static int tcf_skbmod_init(struct net *net, struct nlattr *nla,
 			   struct nlattr *est, struct tc_action **a,
-			   int ovr, int bind)
+			   int ovr, int bind, struct netlink_ext_ack *extack)
 {
 	struct tc_action_net *tn = net_generic(net, skbmod_net_id);
 	struct nlattr *tb[TCA_SKBMOD_MAX + 1];
@@ -184,7 +184,7 @@ static int tcf_skbmod_init(struct net *net, struct nlattr *nla,
 	return ret;
 }
 
-static void tcf_skbmod_cleanup(struct tc_action *a, int bind)
+static void tcf_skbmod_cleanup(struct tc_action *a)
 {
 	struct tcf_skbmod *d = to_skbmod(a);
 	struct tcf_skbmod_params  *p;
@@ -232,14 +232,16 @@ nla_put_failure:
 
 static int tcf_skbmod_walker(struct net *net, struct sk_buff *skb,
 			     struct netlink_callback *cb, int type,
-			     const struct tc_action_ops *ops)
+			     const struct tc_action_ops *ops,
+			     struct netlink_ext_ack *extack)
 {
 	struct tc_action_net *tn = net_generic(net, skbmod_net_id);
 
-	return tcf_generic_walker(tn, skb, cb, type, ops);
+	return tcf_generic_walker(tn, skb, cb, type, ops, extack);
 }
 
-static int tcf_skbmod_search(struct net *net, struct tc_action **a, u32 index)
+static int tcf_skbmod_search(struct net *net, struct tc_action **a, u32 index,
+			     struct netlink_ext_ack *extack)
 {
 	struct tc_action_net *tn = net_generic(net, skbmod_net_id);
 
@@ -266,18 +268,17 @@ static __net_init int skbmod_init_net(struct net *net)
 	return tc_action_net_init(tn, &act_skbmod_ops);
 }
 
-static void __net_exit skbmod_exit_net(struct net *net)
+static void __net_exit skbmod_exit_net(struct list_head *net_list)
 {
-	struct tc_action_net *tn = net_generic(net, skbmod_net_id);
-
-	tc_action_net_exit(tn);
+	tc_action_net_exit(net_list, skbmod_net_id);
 }
 
 static struct pernet_operations skbmod_net_ops = {
 	.init = skbmod_init_net,
-	.exit = skbmod_exit_net,
+	.exit_batch = skbmod_exit_net,
 	.id   = &skbmod_net_id,
 	.size = sizeof(struct tc_action_net),
+	.async = true,
 };
 
 MODULE_AUTHOR("Jamal Hadi Salim, <jhs@mojatatu.com>");

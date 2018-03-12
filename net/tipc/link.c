@@ -483,7 +483,7 @@ bool tipc_link_create(struct net *net, char *if_name, int bearer_id,
 /**
  * tipc_link_bc_create - create new link to be used for broadcast
  * @n: pointer to associated node
- * @mtu: mtu to be used
+ * @mtu: mtu to be used initially if no peers
  * @window: send window to be used
  * @inputq: queue to put messages ready for delivery
  * @namedq: queue to put binding table update messages ready for delivery
@@ -2126,7 +2126,8 @@ void tipc_link_set_tolerance(struct tipc_link *l, u32 tol,
 			     struct sk_buff_head *xmitq)
 {
 	l->tolerance = tol;
-	tipc_link_build_proto_msg(l, STATE_MSG, 0, 0, 0, tol, 0, xmitq);
+	if (link_is_up(l))
+		tipc_link_build_proto_msg(l, STATE_MSG, 0, 0, 0, tol, 0, xmitq);
 }
 
 void tipc_link_set_prio(struct tipc_link *l, u32 prio,

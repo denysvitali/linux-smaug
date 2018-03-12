@@ -114,7 +114,6 @@
 			This facility can be used to prevent such uncontrolled
 			GPE floodings.
 			Format: <int>
-			Support masking of GPEs numbered from 0x00 to 0x7f.
 
 	acpi_no_auto_serialize	[HW,ACPI]
 			Disable auto-serialization of AML methods
@@ -223,7 +222,7 @@
 
 	acpi_sleep=	[HW,ACPI] Sleep options
 			Format: { s3_bios, s3_mode, s3_beep, s4_nohwsig,
-				  old_ordering, nonvs, sci_force_enable }
+				  old_ordering, nonvs, sci_force_enable, nobl }
 			See Documentation/power/video.txt for information on
 			s3_bios and s3_mode.
 			s3_beep is for debugging; it makes the PC's speaker beep
@@ -239,6 +238,9 @@
 			sci_force_enable causes the kernel to set SCI_EN directly
 			on resume from S1/S3 (which is against the ACPI spec,
 			but some broken systems don't work without it).
+			nobl causes the internal blacklist of systems known to
+			behave incorrectly in some ways with respect to system
+			suspend and resume to be ignored (use wisely).
 
 	acpi_use_timer_override [HW,ACPI]
 			Use timer override. For some broken Nvidia NF5 boards
@@ -387,15 +389,15 @@
 			Use software keyboard repeat
 
 	audit=		[KNL] Enable the audit sub-system
-			Format: { "0" | "1" } (0 = disabled, 1 = enabled)
-			0 - kernel audit is disabled and can not be enabled
-			    until the next reboot
+			Format: { "0" | "1" | "off" | "on" }
+			0 | off - kernel audit is disabled and can not be
+			    enabled until the next reboot
 			unset - kernel audit is initialized but disabled and
 			    will be fully enabled by the userspace auditd.
-			1 - kernel audit is initialized and partially enabled,
-			    storing at most audit_backlog_limit messages in
-			    RAM until it is fully enabled by the userspace
-			    auditd.
+			1 | on - kernel audit is initialized and partially
+			    enabled, storing at most audit_backlog_limit
+			    messages in RAM until it is fully enabled by the
+			    userspace auditd.
 			Default: unset
 
 	audit_backlog_limit= [KNL] Set the audit queue size limit.
@@ -643,6 +645,20 @@
                 device, prepend "brl," before the device type, for instance
 			console=brl,ttyS0
 		For now, only VisioBraille is supported.
+
+	console_msg_format=
+			[KNL] Change console messages format
+		default
+			By default we print messages on consoles in
+			"[time stamp] text\n" format (time stamp may not be
+			printed, depending on CONFIG_PRINTK_TIME or
+			`printk_time' param).
+		syslog
+			Switch to syslog format: "<%u>[time stamp] text\n"
+			IOW, each message will have a facility and loglevel
+			prefix. The format is similar to one used by syslog()
+			syscall, or to executing "dmesg -S --raw" or to reading
+			from /proc/kmsg.
 
 	consoleblank=	[KNL] The console blank (screen saver) timeout in
 			seconds. A value of 0 disables the blank timer.
@@ -915,9 +931,12 @@
 
 	earlycon=	[KNL] Output early console device and options.
 
-			When used with no options, the early console is
-			determined by the stdout-path property in device
-			tree's chosen node.
+			[ARM64] The early console is determined by the
+			stdout-path property in device tree's chosen node,
+			or determined by the ACPI SPCR table.
+
+			[X86] When used with no options the early console is
+			determined by the ACPI SPCR table.
 
 		cdns,<addr>[,options]
 			Start an early, polled-mode console on a Cadence
@@ -1327,10 +1346,6 @@
 	hvc_iucv_allow=	[S390] Comma-separated list of z/VM user IDs.
 			       If specified, z/VM IUCV HVC accepts connections
 			       from listed z/VM user IDs only.
-
-	hwthread_map=	[METAG] Comma-separated list of Linux cpu id to
-			        hardware thread id mappings.
-				Format: <cpu>:<hwthread>
 
 	keep_bootcon	[KNL]
 			Do not unregister boot console at start. This is only
@@ -1747,6 +1762,17 @@
 
 			nohz
 			  Disable the tick when a single task runs.
+
+			  A residual 1Hz tick is offloaded to workqueues, which you
+			  need to affine to housekeeping through the global
+			  workqueue's affinity configured via the
+			  /sys/devices/virtual/workqueue/cpumask sysfs file, or
+			  by using the 'domain' flag described below.
+
+			  NOTE: by default the global workqueue runs on all CPUs,
+			  so to protect individual CPUs the 'cpumask' file has to
+			  be configured manually after bootup.
+
 			domain
 			  Isolate from the general SMP balancing and scheduling
 			  algorithms. Note that performing domain isolation this way
@@ -1806,30 +1832,29 @@
 	keepinitrd	[HW,ARM]
 
 	kernelcore=	[KNL,X86,IA-64,PPC]
-			Format: nn[KMGTPE] | "mirror"
-			This parameter
-			specifies the amount of memory usable by the kernel
-			for non-movable allocations.  The requested amount is
-			spread evenly throughout all nodes in the system. The
-			remaining memory in each node is used for Movable
-			pages. In the event, a node is too small to have both
-			kernelcore and Movable pages, kernelcore pages will
-			take priority and other nodes will have a larger number
-			of Movable pages.  The Movable zone is used for the
-			allocation of pages that may be reclaimed or moved
-			by the page migration subsystem.  This means that
-			HugeTLB pages may not be allocated from this zone.
-			Note that allocations like PTEs-from-HighMem still
-			use the HighMem zone if it exists, and the Normal
+			Format: nn[KMGTPE] | nn% | "mirror"
+			This parameter specifies the amount of memory usable by
+			the kernel for non-movable allocations.  The requested
+			amount is spread evenly throughout all nodes in the
+			system as ZONE_NORMAL.  The remaining memory is used for
+			movable memory in its own zone, ZONE_MOVABLE.  In the
+			event, a node is too small to have both ZONE_NORMAL and
+			ZONE_MOVABLE, kernelcore memory will take priority and
+			other nodes will have a larger ZONE_MOVABLE.
+
+			ZONE_MOVABLE is used for the allocation of pages that
+			may be reclaimed or moved by the page migration
+			subsystem.  Note that allocations like PTEs-from-HighMem
+			still use the HighMem zone if it exists, and the Normal
 			zone if it does not.
 
-			Instead of specifying the amount of memory (nn[KMGTPE]),
-			you can specify "mirror" option. In case "mirror"
+			It is possible to specify the exact amount of memory in
+			the form of "nn[KMGTPE]", a percentage of total system
+			memory in the form of "nn%", or "mirror".  If "mirror"
 			option is specified, mirrored (reliable) memory is used
 			for non-movable allocations and remaining memory is used
-			for Movable pages. nn[KMGTPE] and "mirror" are exclusive,
-			so you can NOT specify nn[KMGTPE] and "mirror" at the same
-			time.
+			for Movable pages.  "nn[KMGTPE]", "nn%", and "mirror"
+			are exclusive, so you cannot specify multiple forms.
 
 	kgdbdbgp=	[KGDB,HW] kgdb over EHCI usb debug port.
 			Format: <Controller#>[,poll interval]
@@ -2050,9 +2075,6 @@
 			This tests the locking primitive's ability to
 			transition abruptly to and from idle.
 
-	locktorture.torture_runnable= [BOOT]
-			Start locktorture running at boot time.
-
 	locktorture.torture_type= [KNL]
 			Specify the locking implementation to test.
 
@@ -2221,6 +2243,15 @@
 			The memory region may be marked as e820 type 12 (0xc)
 			and is NVDIMM or ADR memory.
 
+	memmap=<size>%<offset>-<oldtype>+<newtype>
+			[KNL,ACPI] Convert memory within the specified region
+			from <oldtype> to <newtype>. If "-<oldtype>" is left
+			out, the whole region will be marked as <newtype>,
+			even if previously unavailable. If "+<newtype>" is left
+			out, matching memory will be removed. Types are
+			specified as e820 types, e.g., 1 = RAM, 2 = reserved,
+			3 = ACPI, 12 = PRAM.
+
 	memory_corruption_check=0/1 [X86]
 			Some BIOSes seem to corrupt the first 64k of
 			memory when doing things like suspend/resume.
@@ -2337,13 +2368,14 @@
 	mousedev.yres=	[MOUSE] Vertical screen resolution, used for devices
 			reporting absolute coordinates, such as tablets
 
-	movablecore=nn[KMG]	[KNL,X86,IA-64,PPC] This parameter
-			is similar to kernelcore except it specifies the
-			amount of memory used for migratable allocations.
-			If both kernelcore and movablecore is specified,
-			then kernelcore will be at *least* the specified
-			value but may be more. If movablecore on its own
-			is specified, the administrator must be careful
+	movablecore=	[KNL,X86,IA-64,PPC]
+			Format: nn[KMGTPE] | nn%
+			This parameter is the complement to kernelcore=, it
+			specifies the amount of memory used for migratable
+			allocations.  If both kernelcore and movablecore is
+			specified, then kernelcore will be at *least* the
+			specified value but may be more.  If movablecore on its
+			own is specified, the administrator must be careful
 			that the amount of memory usable for all allocations
 			is not too small.
 
@@ -2538,6 +2570,9 @@
 			please see 'nowatchdog'.
 			This is useful when you use a panic=... timeout and
 			need the box quickly up again.
+
+			These settings can be accessed at runtime via
+			the nmi_watchdog and hardlockup_panic sysctls.
 
 	netpoll.carrier_timeout=
 			[NET] Specifies amount of time (in seconds) that
@@ -3484,9 +3519,6 @@
 			the same as for rcuperf.nreaders.
 			N, where N is the number of CPUs
 
-	rcuperf.perf_runnable= [BOOT]
-			Start rcuperf running at boot time.
-
 	rcuperf.perf_type= [KNL]
 			Specify the RCU implementation to test.
 
@@ -3620,9 +3652,6 @@
 			Test RCU's dyntick-idle handling.  See also the
 			rcutorture.shuffle_interval parameter.
 
-	rcutorture.torture_runnable= [BOOT]
-			Start rcutorture running at boot time.
-
 	rcutorture.torture_type= [KNL]
 			Specify the RCU implementation to test.
 
@@ -3680,7 +3709,8 @@
 
 	rdt=		[HW,X86,RDT]
 			Turn on/off individual RDT features. List is:
-			cmt, mbmtotal, mbmlocal, l3cat, l3cdp, l2cat, mba.
+			cmt, mbmtotal, mbmlocal, l3cat, l3cdp, l2cat, l2cdp,
+			mba.
 			E.g. to turn on cmt and turn off mba use:
 				rdt=cmt,!mba
 
@@ -3700,7 +3730,11 @@
 			[KNL, SMP] Set scheduler's default relax_domain_level.
 			See Documentation/cgroup-v1/cpusets.txt.
 
-	reserve=	[KNL,BUGS] Force the kernel to ignore some iomem area
+	reserve=	[KNL,BUGS] Force kernel to ignore I/O ports or memory
+			Format: <base1>,<size1>[,<base2>,<size2>,...]
+			Reserve I/O ports or memory so the kernel won't use
+			them.  If <base> is less than 0x10000, the region
+			is assumed to be I/O ports; otherwise it is memory.
 
 	reservetop=	[X86-32]
 			Format: nn[KMG]

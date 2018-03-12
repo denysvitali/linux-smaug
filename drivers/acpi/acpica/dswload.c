@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2017, Intel Corp.
+ * Copyright (C) 2000 - 2018, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -147,7 +147,7 @@ acpi_ds_load1_begin_op(struct acpi_walk_state *walk_state,
 	char *path;
 	u32 flags;
 
-	ACPI_FUNCTION_TRACE(ds_load1_begin_op);
+	ACPI_FUNCTION_TRACE_PTR(ds_load1_begin_op, walk_state->op);
 
 	op = walk_state->op;
 	ACPI_DEBUG_PRINT((ACPI_DB_DISPATCH, "Op=%p State=%p\n", op,
@@ -207,7 +207,8 @@ acpi_ds_load1_begin_op(struct acpi_walk_state *walk_state,
 		}
 #endif
 		if (ACPI_FAILURE(status)) {
-			ACPI_ERROR_NAMESPACE(path, status);
+			ACPI_ERROR_NAMESPACE(walk_state->scope_info, path,
+					     status);
 			return_ACPI_STATUS(status);
 		}
 
@@ -375,7 +376,8 @@ acpi_ds_load1_begin_op(struct acpi_walk_state *walk_state,
 			}
 
 			if (ACPI_FAILURE(status)) {
-				ACPI_ERROR_NAMESPACE(path, status);
+				ACPI_ERROR_NAMESPACE(walk_state->scope_info,
+						     path, status);
 				return_ACPI_STATUS(status);
 			}
 		}

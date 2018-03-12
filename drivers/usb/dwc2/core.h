@@ -217,7 +217,7 @@ struct dwc2_hsotg_ep {
 	unsigned char           dir_in;
 	unsigned char           index;
 	unsigned char           mc;
-	unsigned char           interval;
+	u16                     interval;
 
 	unsigned int            halted:1;
 	unsigned int            periodic:1;
@@ -408,7 +408,7 @@ enum dwc2_ep0_state {
  * @ahbcfg:             This field allows the default value of the GAHBCFG
  *                      register to be overridden
  *                       -1         - GAHBCFG value will be set to 0x06
- *                                    (INCR4, default)
+ *                                    (INCR, default)
  *                       all others - GAHBCFG value will be overridden with
  *                                    this value
  *                      Not all bits can be controlled like this, the
@@ -427,6 +427,19 @@ enum dwc2_ep0_state {
  *			needed.
  *			0 - No (default)
  *			1 - Yes
+ * @lpm:		Enable LPM support.
+ *			0 - No
+ *			1 - Yes
+ * @lpm_clock_gating:		Enable core PHY clock gating.
+ *			0 - No
+ *			1 - Yes
+ * @besl:		Enable LPM Errata support.
+ *			0 - No
+ *			1 - Yes
+ * @hird_threshold_en:	HIRD or HIRD Threshold enable.
+ *			0 - No
+ *			1 - Yes
+ * @hird_threshold:	Value of BESL or HIRD Threshold.
  * @activate_stm_fs_transceiver: Activate internal transceiver using GGPIO
  *			register.
  *			0 - Deactivate the transceiver (default)
@@ -479,12 +492,18 @@ struct dwc2_core_params {
 	bool enable_dynamic_fifo;
 	bool en_multiple_tx_fifo;
 	bool i2c_enable;
+	bool acg_enable;
 	bool ulpi_fs_ls;
 	bool ts_dline;
 	bool reload_ctl;
 	bool uframe_sched;
 	bool external_id_pin_ctl;
 	bool hibernation;
+	bool lpm;
+	bool lpm_clock_gating;
+	bool besl;
+	bool hird_threshold_en;
+	u8 hird_threshold;
 	bool activate_stm_fs_transceiver;
 	u16 max_packet_count;
 	u32 max_transfer_size;
@@ -587,12 +606,14 @@ struct dwc2_hw_params {
 	unsigned hs_phy_type:2;
 	unsigned fs_phy_type:2;
 	unsigned i2c_enable:1;
+	unsigned acg_enable:1;
 	unsigned num_dev_ep:4;
 	unsigned num_dev_in_eps : 4;
 	unsigned num_dev_perio_in_ep:4;
 	unsigned total_fifo_size:16;
 	unsigned power_optimized:1;
 	unsigned utmi_phy_data_width:2;
+	unsigned lpm_mode:1;
 	u32 snpsid;
 	u32 dev_ep_dirs;
 	u32 g_tx_fifo_size[MAX_EPS_CHANNELS];
@@ -626,6 +647,7 @@ struct dwc2_gregs_backup {
 	u32 gi2cctl;
 	u32 hptxfsiz;
 	u32 pcgcctl;
+	u32 pcgcctl1;
 	u32 gdfifocfg;
 	u32 dtxfsiz[MAX_EPS_CHANNELS];
 	u32 gpwrdn;
@@ -929,6 +951,7 @@ struct dwc2_hsotg {
 	int     irq;
 	struct clk *clk;
 	struct reset_control *reset;
+	struct reset_control *reset_ecc;
 
 	unsigned int queuing_high_bandwidth:1;
 	unsigned int srp_success:1;
@@ -946,6 +969,7 @@ struct dwc2_hsotg {
 
 	/* DWC OTG HW Release versions */
 #define DWC2_CORE_REV_2_71a	0x4f54271a
+#define DWC2_CORE_REV_2_80a	0x4f54280a
 #define DWC2_CORE_REV_2_90a	0x4f54290a
 #define DWC2_CORE_REV_2_91a	0x4f54291a
 #define DWC2_CORE_REV_2_92a	0x4f54292a
@@ -954,6 +978,11 @@ struct dwc2_hsotg {
 #define DWC2_CORE_REV_3_10a	0x4f54310a
 #define DWC2_FS_IOT_REV_1_00a	0x5531100a
 #define DWC2_HS_IOT_REV_1_00a	0x5532100a
+
+	/* DWC OTG HW Core ID */
+#define DWC2_OTG_ID		0x4f540000
+#define DWC2_FS_IOT_ID		0x55310000
+#define DWC2_HS_IOT_ID		0x55320000
 
 #if IS_ENABLED(CONFIG_USB_DWC2_HOST) || IS_ENABLED(CONFIG_USB_DWC2_DUAL_ROLE)
 	union dwc2_hcd_internal_flags {
@@ -971,6 +1000,7 @@ struct dwc2_hsotg {
 	} flags;
 
 	struct list_head non_periodic_sched_inactive;
+	struct list_head non_periodic_sched_waiting;
 	struct list_head non_periodic_sched_active;
 	struct list_head *non_periodic_qh_ptr;
 	struct list_head periodic_sched_inactive;
@@ -1014,24 +1044,6 @@ struct dwc2_hsotg {
 	struct kmem_cache *desc_gen_cache;
 	struct kmem_cache *desc_hsisoc_cache;
 
-#ifdef DEBUG
-	u32 frrem_samples;
-	u64 frrem_accum;
-
-	u32 hfnum_7_samples_a;
-	u64 hfnum_7_frrem_accum_a;
-	u32 hfnum_0_samples_a;
-	u64 hfnum_0_frrem_accum_a;
-	u32 hfnum_other_samples_a;
-	u64 hfnum_other_frrem_accum_a;
-
-	u32 hfnum_7_samples_b;
-	u64 hfnum_7_frrem_accum_b;
-	u32 hfnum_0_samples_b;
-	u64 hfnum_0_frrem_accum_b;
-	u32 hfnum_other_samples_b;
-	u64 hfnum_other_frrem_accum_b;
-#endif
 #endif /* CONFIG_USB_DWC2_HOST || CONFIG_USB_DWC2_DUAL_ROLE */
 
 #if IS_ENABLED(CONFIG_USB_DWC2_PERIPHERAL) || \
@@ -1126,6 +1138,8 @@ void dwc2_flush_rx_fifo(struct dwc2_hsotg *hsotg);
 void dwc2_enable_global_interrupts(struct dwc2_hsotg *hcd);
 void dwc2_disable_global_interrupts(struct dwc2_hsotg *hcd);
 
+void dwc2_enable_acg(struct dwc2_hsotg *hsotg);
+
 /* This function should be called on every hardware interrupt. */
 irqreturn_t dwc2_handle_common_intr(int irq, void *dev);
 
@@ -1135,6 +1149,11 @@ extern const struct of_device_id dwc2_of_match_table[];
 int dwc2_lowlevel_hw_enable(struct dwc2_hsotg *hsotg);
 int dwc2_lowlevel_hw_disable(struct dwc2_hsotg *hsotg);
 
+/* Common polling functions */
+int dwc2_hsotg_wait_bit_set(struct dwc2_hsotg *hs_otg, u32 reg, u32 bit,
+			    u32 timeout);
+int dwc2_hsotg_wait_bit_clear(struct dwc2_hsotg *hs_otg, u32 reg, u32 bit,
+			      u32 timeout);
 /* Parameters */
 int dwc2_get_hwparams(struct dwc2_hsotg *hsotg);
 int dwc2_init_params(struct dwc2_hsotg *hsotg);
@@ -1178,7 +1197,7 @@ void dwc2_dump_global_registers(struct dwc2_hsotg *hsotg);
 int dwc2_hsotg_remove(struct dwc2_hsotg *hsotg);
 int dwc2_hsotg_suspend(struct dwc2_hsotg *dwc2);
 int dwc2_hsotg_resume(struct dwc2_hsotg *dwc2);
-int dwc2_gadget_init(struct dwc2_hsotg *hsotg, int irq);
+int dwc2_gadget_init(struct dwc2_hsotg *hsotg);
 void dwc2_hsotg_core_init_disconnected(struct dwc2_hsotg *dwc2,
 				       bool reset);
 void dwc2_hsotg_core_connect(struct dwc2_hsotg *hsotg);
@@ -1190,6 +1209,7 @@ int dwc2_restore_device_registers(struct dwc2_hsotg *hsotg);
 int dwc2_hsotg_tx_fifo_count(struct dwc2_hsotg *hsotg);
 int dwc2_hsotg_tx_fifo_total_depth(struct dwc2_hsotg *hsotg);
 int dwc2_hsotg_tx_fifo_average_depth(struct dwc2_hsotg *hsotg);
+void dwc2_gadget_init_lpm(struct dwc2_hsotg *hsotg);
 #else
 static inline int dwc2_hsotg_remove(struct dwc2_hsotg *dwc2)
 { return 0; }
@@ -1197,7 +1217,7 @@ static inline int dwc2_hsotg_suspend(struct dwc2_hsotg *dwc2)
 { return 0; }
 static inline int dwc2_hsotg_resume(struct dwc2_hsotg *dwc2)
 { return 0; }
-static inline int dwc2_gadget_init(struct dwc2_hsotg *hsotg, int irq)
+static inline int dwc2_gadget_init(struct dwc2_hsotg *hsotg)
 { return 0; }
 static inline void dwc2_hsotg_core_init_disconnected(struct dwc2_hsotg *dwc2,
 						     bool reset) {}
@@ -1217,6 +1237,7 @@ static inline int dwc2_hsotg_tx_fifo_total_depth(struct dwc2_hsotg *hsotg)
 { return 0; }
 static inline int dwc2_hsotg_tx_fifo_average_depth(struct dwc2_hsotg *hsotg)
 { return 0; }
+static inline void dwc2_gadget_init_lpm(struct dwc2_hsotg *hsotg) {}
 #endif
 
 #if IS_ENABLED(CONFIG_USB_DWC2_HOST) || IS_ENABLED(CONFIG_USB_DWC2_DUAL_ROLE)

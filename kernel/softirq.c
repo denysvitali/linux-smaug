@@ -145,8 +145,7 @@ static void __local_bh_enable(unsigned int cnt)
 }
 
 /*
- * Special-case - softirqs can safely be enabled in
- * cond_resched_softirq(), or by __do_softirq(),
+ * Special-case - softirqs can safely be enabled by __do_softirq(),
  * without processing still-pending softirqs:
  */
 void _local_bh_enable(void)
@@ -665,7 +664,7 @@ static void run_ksoftirqd(unsigned int cpu)
 		 */
 		__do_softirq();
 		local_irq_enable();
-		cond_resched_rcu_qs();
+		cond_resched();
 		return;
 	}
 	local_irq_enable();
