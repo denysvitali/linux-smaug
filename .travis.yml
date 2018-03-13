@@ -1,0 +1,24 @@
+sudo: required
+services:
+- docker
+before_install:
+- docker pull dvitali/android-build-tools
+- mkdir -p kernel/
+- git clone https://github.com/denysvitali/ramdisk-builder kernel/ramdisk
+- ln -s kernel/ramdisk/ramdisk.cpio.gz kernel/ramdisk/custom-initramfs.cpio.gz
+- git clone https://github.com/denysvitali/smaug-custom-initram kernel/smaug-custom-initram
+- git clone https://github.com/denysvitali/linux-smaug kernel/linux-smaug;
+script:
+- sudo ls -la /var/lib/docker/volumes/kernel/_data
+- docker run -v kernel:/kernel --entrypoint=zsh dvitali/android-build:feb-20 -c 'cd /kernel/ramdisk/; ./build.sh; cd /kernel/linux-smaug/; ./getvendor.sh && make -j8 && ./build-image.sh'
+before_deploy:
+  - export RELEASE_PKG_FILES=$(ls /var/lib/docker/volumes/kernel/_data/kitchen/*.img)
+deploy:
+  provider: releases
+  api_key:
+    secure: iAxinDCeXOe0ejli7qZ5GXAZb2lgXgMll27hEBZnTYm8kyNzCX9RV6mWbaQkafMpg9yaBlywRzlKxyIQGYkw1qFSZOYXMOO9XF42n0XIkL5vl4m7fcFMcgBSqc1VvWlxCNSeWXN4dkAtGBmWmBsU5VqBZAYdPBnTMh2vef1DDkPoNh5ht+mTKhBCQzsq+0dmHTnckghahQLdVmj1oufUSE41bJVnWOFRKUXYZglGZVPmnQpZ38kzMoJPoy8MievZFVlrozOlK1U0pb0Iv8q8C61QrRGXaN3RSqKXPlw08+f1caQbKPyg4pCdFjqLFYR5ve608WmJudj0Ui176tvbAPEJNM3dhB+aWw8ctUjVNqql8h7dDPRpasRV7nfE2iEGRsaTfgl1GljJH1/CdOelWpT3HmBNn1ZQxeJnOHkeFGH7Itc4L4c3dWh75dYbO8vhLcal1gJyxx4DRj3U3Y+f9KHhTtfTxQX8UrXCY/NgjEW6TragfU3+hZjG1LT2/KLaWVdqOhstxHp9X8kL+4PMhI0z9/7bvbkaVXEbSuS6u5ix++jtiGBdlCMtWuQkAu44HgShIHgVH3HFC4iVGC7jicar1wwoeSYfDc+wk4DJS7s6bpJWQb06aUlKj7GHrEx7Tfykf9Hz8qlPj7Aw8Rxi65LdGFCrLaE0sC3jZ2ZjLtQ=
+  file_glob: true
+  file: "${RELEASE_PKG_FILES}"
+  on:
+    repo: denysvitali/linux-smaug
+    branch: linux-4.17-next
