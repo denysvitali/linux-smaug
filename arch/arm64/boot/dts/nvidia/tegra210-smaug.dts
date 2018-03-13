@@ -18,8 +18,9 @@
 
 	aliases {
 		serial0 = &uarta;
-		serial1 = &uartc;
-		serial2 = &uartd;
+		serial2 = &uartc;
+		serial3 = &uartd;
+		qspi6 = &qspi6;
 	};
 
 	chosen {
@@ -99,21 +100,6 @@
 	gpu@57000000 {
 		status = "okay";
 		vdd-supply = <&max77621_gpu>;
-	};
-
-	serial@70006000 {
-		status = "okay";
-	};
-
-
-	serial@70006200 {
-		compatible = "nvidia,tegra210-hsuart", "nvidia,tegra30-hsuart";
-		status = "okay";
-	};
-
-	serial@70006300 {
-		compatible = "nvidia,tegra124-hsuart", "nvidia,tegra30-hsuart";
-		status = "okay";
 	};
 
 	pinmux: pinmux@700008d4 {
@@ -1709,92 +1695,6 @@
 		};
 	};
 
-	i2c@7000d100 {
-		status = "okay";
-		clock-frequency = <400000>;
-
-		nau8825@1a {
-			compatible = "nuvoton,nau8825";
-			reg = <0x1a>;
-			interrupt-parent = <&gpio>;
-			interrupts = <TEGRA_GPIO(E, 6) IRQ_TYPE_LEVEL_LOW>;
-			clocks = <&tegra_car TEGRA210_CLK_CLK_OUT_2>;
-			clock-names = "mclk";
-
-			nuvoton,jkdet-enable;
-			nuvoton,jkdet-polarity = <GPIO_ACTIVE_LOW>;
-			nuvoton,vref-impedance = <2>;
-			nuvoton,micbias-voltage = <6>;
-			nuvoton,sar-threshold-num = <4>;
-			nuvoton,sar-threshold = <0xc 0x1e 0x38 0x60>;
-			nuvoton,sar-hysteresis = <1>;
-			nuvoton,sar-voltage = <0>;
-			nuvoton,sar-compare-time = <0>;
-			nuvoton,sar-sampling-time = <0>;
-			nuvoton,short-key-debounce = <2>;
-			nuvoton,jack-insert-debounce = <7>;
-			nuvoton,jack-eject-debounce = <7>;
-			status = "disabled";
-		};
-
-
-		backlight: lp8557-backlight@2c {
-				status = "okay";
-				compatible = "ti,lp8557";
-				reg = <0x2c>;
-				power-supply = <&pplcd_vdd>;
-				enable-supply = <&pp1800_lcdio>;
-				bl-name = "lp8557-backlight";
-				dev-ctrl = /bits/ 8 <0x01>;
-				init-brt = /bits/ 8 <0xFF>;
-				/* Full scale current, 20mA */
-				rom_11h {
-						rom-addr = /bits/ 8 <0x11>;
-						rom-val = /bits/ 8 <0x05>;
-				};
-				/* Frequency = 4.9kHz, magic undocumented val */
-				rom_12h {
-						rom-addr = /bits/ 8 <0x12>;
-						rom-val = /bits/ 8 <0x29>;
-				};
-				/* Boost freq = 1MHz, BComp option = 1 */
-				rom_13h {
-						rom-addr = /bits/ 8 <0x13>;
-						rom-val = /bits/ 8 <0x03>;
-				};
-				/* 4V OV, 6 output LED string enabled */
-				rom_14h {
-						rom-addr = /bits/ 8 <0x14>;
-						rom-val = /bits/ 8 <0xbf>;
-				};
-		};
-
-		audio-codec@2d {
-			compatible = "realtek,rt5677";
-			reg = <0x2d>;
-			interrupts-extended = <&gpio TEGRA_GPIO(X, 3) IRQ_TYPE_EDGE_BOTH>;
-			gpio-controller;
-			#gpio-cells = <2>;
-			// TODO: Add more?
-			// See: Documentation/devicetree/bindings/sound/rt5677.txt
-			status = "disabled";
-		};
-		audio-jack@3b {
-			// TODO: Describe TI TS3A227E
-			reg = <0x3b>;
-			status = "disabled";
-		};
-		tmp451: temperature-sensor@4c {
-			status = "okay";
-			compatible = "ti,tmp451";
-			reg = <0x4c>;
-			interrupt-parent = <&gpio>;
-			interrupts = <TEGRA_GPIO(X, 4) IRQ_TYPE_LEVEL_LOW>;
-			vcc-supply = <&pp1800>;
-			#thermal-sensor-cells = <1>;
-		};
-	};
-
 	pmc@7000e400 {
 		nvidia,invert-interrupt;
 		nvidia,suspend-mode = <0>;
@@ -1918,7 +1818,7 @@
 	};
 
 	wifi: wifi_bcm4354 {
-		compatible = "brcm,bcm4354";
+		compatible = "bcm,bcm4354";
 		interrupt-parent = <&gpio>;
 		interrupts = <TEGRA_GPIO(H, 2) IRQ_TYPE_LEVEL_HIGH>;
 		wl_reg_on = <&gpio TEGRA_GPIO(H, 1) GPIO_ACTIVE_HIGH>;
@@ -1927,7 +1827,7 @@
 			PMC_WAKE_TYPE_EVENT 8 PMC_TRIGGER_TYPE_HIGH>;
 	};
 	bt_bcm4354 {
-		compatible = "brcm,bt-bcm4354";
+		compatible = "bcm,bt-bcm4354";
 		bt_reg_on-gpios = <&gpio TEGRA_GPIO(H, 4) GPIO_ACTIVE_LOW>;
 		bt_host_wake-gpios = <&gpio TEGRA_GPIO(H, 5) GPIO_ACTIVE_HIGH>;
 		bt_ext_wake-gpios = <&gpio TEGRA_GPIO(H, 3) GPIO_ACTIVE_LOW>;
@@ -2070,38 +1970,114 @@
 			regulator-max-microvolt = <5000000>;
 		};
 	};
+};
 
-	spi@70410000 {
-		status = "disabled";
-		spi@0 {
-			compatible = "spidev";
-			reg = <1>;
-			spi-max-frequency = <24000000>;
-			controller-data {
-				nvidia,x1-len-limit = <16>;
-				nvidia,x1-bus-speed = <24000000>;
-				nvidia,x1-dummy-cycle = <0>;
-				nvidia,x4-bus-speed = <24000000>;
-				nvidia,x4-dummy-cycle = <8>;
-			};
+
+&i2c6 {
+	status = "okay";
+	headset: nau8825@1a {
+		compatible = "nuvoton,nau8825";
+		reg = <0x1a>;
+		interrupt-parent = <&gpio>;
+		interrupts = <TEGRA_GPIO(E, 6) IRQ_TYPE_LEVEL_LOW>;
+		nuvoton,jkdet-enable;
+		nuvoton,jkdet-polarity = <GPIO_ACTIVE_LOW>;
+		nuvoton,vref-impedance = <2>;
+		nuvoton,micbias-voltage = <6>;
+		// Setup 4 buttons impedane according to Android specification
+		nuvoton,sar-threshold-num = <4>;
+		nuvoton,sar-threshold = <0xc 0x1e 0x38 0x60>;
+		nuvoton,sar-hysteresis = <1>;
+		nuvoton,sar-voltage = <0>;
+		nuvoton,sar-compare-time = <0>;
+		nuvoton,sar-sampling-time = <0>;
+		nuvoton,short-key-debounce = <2>;
+		nuvoton,jack-insert-debounce = <7>;
+		nuvoton,jack-eject-debounce = <7>;
+	};
+	backlight: lp8557-backlight@2c {
+		status = "okay";
+		compatible = "ti,lp8557";
+		reg = <0x2c>;
+		power-supply = <&pplcd_vdd>;
+		enable-supply = <&pp1800_lcdio>;
+		bl-name = "lp8557-backlight";
+		dev-ctrl = /bits/ 8 <0x01>;
+		init-brt = /bits/ 8 <0xFF>;
+		/* Full scale current, 20mA */
+		rom_11h {
+				rom-addr = /bits/ 8 <0x11>;
+				rom-val = /bits/ 8 <0x05>;
 		};
-		spiflash@1 {
-			#address-cells = <1>;
-			#size-cells = <1>;
-			compatible = "w25q128fw";
-			reg = <0>;
-			spi-max-frequency = <24000000>;
-			partition@0 {
-				label = "Bootloader";
-				reg = <0x00000000 0x01000000>;
-			};
-			controller-data {
-				nvidia,x1-len-limit = <16>;
-				nvidia,x1-bus-speed = <24000000>;
-				nvidia,x1-dummy-cycle = <0>;
-				nvidia,x4-bus-speed = <24000000>;
-				nvidia,x4-dummy-cycle = <8>;
-			};
+		/* Frequency = 4.9kHz, magic undocumented val */
+		rom_12h {
+				rom-addr = /bits/ 8 <0x12>;
+				rom-val = /bits/ 8 <0x29>;
+		};
+		/* Boost freq = 1MHz, BComp option = 1 */
+		rom_13h {
+				rom-addr = /bits/ 8 <0x13>;
+				rom-val = /bits/ 8 <0x03>;
+		};
+		/* 4V OV, 6 output LED string enabled */
+		rom_14h {
+				rom-addr = /bits/ 8 <0x14>;
+				rom-val = /bits/ 8 <0xbf>;
+		};
+	};
+	rt5677: audio-codec@2d {
+		compatible = "realtek,rt5677";
+		reg = <0x2d>;
+		interrupts-extended = <&gpio TEGRA_GPIO(X, 0) IRQ_TYPE_LEVEL_HIGH>;
+		realtek,reset-gpio = <&gpio TEGRA_GPIO(BB, 3) GPIO_ACTIVE_LOW>;
+		nvidia,pmc-wakeup = <&pmc PMC_WAKE_TYPE_EVENT 61
+					PMC_TRIGGER_TYPE_HIGH>;
+		// Workaround for hissing problem b/24679173
+		realtek,i2s1-pulldown;
+		gpio-controller;
+		#gpio-cells = <2>;
+		status = "ok";
+	};
+	tmp451: temperature-sensor@4c {
+		compatible = "ti,tmp451";
+		reg = <0x4c>;
+		interrupt-parent = <&gpio>;
+		interrupts = <TEGRA_GPIO(X, 4) IRQ_TYPE_LEVEL_LOW>;
+		vcc-supply = <&pp1800>;
+		#thermal-sensor-cells = <1>;
+	};
+};
+
+&uarta {
+	status = "okay";
+};
+&uartc {
+	compatible = "nvidia,tegra210-hsuart", "nvidia,tegra30-hsuart";
+	status = "okay";
+};
+
+&uartd {
+	compatible = "nvidia,tegra124-hsuart", "nvidia,tegra30-hsuart";
+	status = "okay";
+};
+
+&qspi6 {
+	spiflash@1 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "w25q128fw";
+		reg = <0>;
+		spi-max-frequency = <24000000>;
+		partition@0 {
+			label = "Bootloader";
+			reg = <0x00000000 0x01000000>;
+		};
+		controller-data {
+			nvidia,x1-len-limit = <16>;
+			nvidia,x1-bus-speed = <24000000>;
+			nvidia,x1-dummy-cycle = <0>;
+			nvidia,x4-bus-speed = <24000000>;
+			nvidia,x4-dummy-cycle = <8>;
 		};
 	};
 };

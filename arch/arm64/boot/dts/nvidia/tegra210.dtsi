@@ -632,7 +632,7 @@
 		status = "disabled";
 	};
 
-	i2c@7000d100 {
+	i2c6: i2c@7000d100 {
 		compatible = "nvidia,tegra210-i2c", "nvidia,tegra114-i2c";
 		reg = <0x0 0x7000d100 0x0 0x100>;
 		interrupts = <GIC_SPI 63 IRQ_TYPE_LEVEL_HIGH>;
@@ -1115,7 +1115,7 @@
 		};
 	};
 
-	spi@70410000 {
+	qspi6: spi@70410000 {
 		compatible = "nvidia,tegra210-qspi";
 		reg = <0x0 0x70410000 0x0 0x1000>;
 		interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>;
