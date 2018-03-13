@@ -7,7 +7,7 @@ before_install:
 - git clone https://github.com/denysvitali/ramdisk-builder kernel/ramdisk
 - ln -s kernel/ramdisk/ramdisk.cpio.gz kernel/ramdisk/custom-initramfs.cpio.gz
 - git clone https://github.com/denysvitali/smaug-custom-initram kernel/smaug-custom-initram
-- git clone https://github.com/denysvitali/linux-smaug kernel/linux-smaug;
+- git clone -b linux-4.17-next https://github.com/denysvitali/linux-smaug kernel/linux-smaug;
 script:
 - sudo ls -la kernel/
 - docker run -v $PWD/kernel:/kernel --entrypoint=zsh dvitali/android-build:feb-20 -c 'cd /kernel/ramdisk/; ./build.sh; cd /kernel/linux-smaug/; make dragon_denvit_defconfig; bash ./getvendor.sh && make -j8 && ./build-image.sh'
