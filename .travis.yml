@@ -2,7 +2,7 @@ sudo: required
 services:
 - docker
 before_install:
-- docker pull dvitali/android-build-tools
+- docker pull dvitali/android-build:feb-20
 - mkdir -p kernel/kitchen
 - git clone https://github.com/denysvitali/ramdisk-builder kernel/ramdisk
 - ln -s kernel/ramdisk/ramdisk.cpio.gz kernel/ramdisk/custom-initramfs.cpio.gz
