@@ -4,7 +4,7 @@ services:
 before_install:
 - mkdir -p kernel/kitchen
 - git clone https://github.com/denysvitali/ramdisk-builder kernel/ramdisk
-- ln -s kernel/ramdisk/ramdisk.cpio.gz kernel/ramdisk/custom-initramfs.cpio.gz
+- ln -s $PWD/kernel/ramdisk/ramdisk.cpio.gz kernel/ramdisk/custom-initramfs.cpio.gz
 - ls -la kernel/ramdisk/
 - git clone https://github.com/denysvitali/smaug-custom-initram kernel/smaug-custom-initram
 - git clone -b linux-4.17-next https://github.com/denysvitali/linux-smaug kernel/linux-smaug;
