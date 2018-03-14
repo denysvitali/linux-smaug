@@ -2,6 +2,7 @@ sudo: required
 services:
 - docker
 before_install:
+- ls -la
 - sudo mkdir -p /build/kernel/kitchen
 - sudo chown -R $UID:$UID /build
 - git clone https://github.com/denysvitali/ramdisk-builder /build/kernel/ramdisk
