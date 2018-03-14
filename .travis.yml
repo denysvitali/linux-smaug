@@ -10,7 +10,7 @@ before_install:
 - ls -la /build/kernel/ramdisk/
 - git clone https://github.com/denysvitali/smaug-custom-initram /build/kernel/smaug-custom-initram
 - mkdir /build/kernel/linux-smaug;
-- sudo mount $PWD /build/kernel/linux-smaug
+- sudo mount -o bind $PWD /build/kernel/linux-smaug
 script:
 - sudo ls -la /build/kernel/
 - docker run -v /build/kernel:/kernel --privileged --entrypoint=zsh dvitali/android-build:feb-20 -c 'cd /kernel/ramdisk/; ./build.sh; ls -la /kernel/ramdisk/; cd /kernel/linux-smaug/; make dragon_denvit_defconfig; bash getvendor.sh -f && make -j8 && ./build-image.sh'
