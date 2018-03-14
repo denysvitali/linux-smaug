@@ -10,8 +10,9 @@ before_install:
 - git clone -b linux-4.17-next https://github.com/denysvitali/linux-smaug kernel/linux-smaug;
 script:
 - sudo ls -la kernel/
-- docker run -v $PWD/kernel:/kernel --privileged --entrypoint=zsh dvitali/android-build:feb-20 -c 'cd /kernel/ramdisk/; ./build.sh; cd /kernel/linux-smaug/; make dragon_denvit_defconfig; bash getvendor.sh -f && make -j8 && ./build-image.sh'
+- docker run -v $PWD/kernel:/kernel --privileged --entrypoint=zsh dvitali/android-build:feb-20 -c 'cd /kernel/ramdisk/; ./build.sh; ls -la /kernel/ramdisk/; cd /kernel/linux-smaug/; make dragon_denvit_defconfig; bash getvendor.sh -f && make -j8 && ./build-image.sh'
 before_deploy:
+  - sudo chown -R $UID:$GID /var/lib/docker/volumes/kernel/
   - ls -la /var/lib/docker/volumes/kernel/_data/{kitchen,ramdisk}
   - export RELEASE_PKG_FILES=$(ls /var/lib/docker/volumes/kernel/_data/kitchen/*.img)
 deploy:
