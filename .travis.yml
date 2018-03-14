@@ -2,7 +2,8 @@ sudo: required
 services:
 - docker
 before_install:
-- mkdir -p /build/kernel/kitchen
+- sudo mkdir -p /build/kernel/kitchen
+- sudo chown -R $UID:$UID /build
 - git clone https://github.com/denysvitali/ramdisk-builder /build/kernel/ramdisk
 - ln -s ramdisk.cpio.gz kernel/ramdisk/custom-initramfs.cpio.gz
 - ls -la /build/kernel/ramdisk/
