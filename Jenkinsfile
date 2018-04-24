@@ -19,7 +19,7 @@ pipeline {
 			steps {
 				sh 'cd /kernel/linux-smaug/'
 				sh './docker-init.sh'
-				sh './getvendor.sh'
+				sh './getvendor.sh -f'
 				sh 'make -j$(nproc)'
 				sh './build-image.sh'
 			}
