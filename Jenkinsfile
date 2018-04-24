@@ -8,14 +8,16 @@ pipeline {
 	stages {
 		stage('Pull') {
 			steps {
-				sh 'cd /kernel'
-				sh 'git clone https://github.com/denysvitali/linux-smaug -b $GIT_BRANCH linux-smaug'
-				sh 'ls -la'
+				sh 'mkdir -p /kernel/linux-smaug && cd /kernel/linux-smaug'
+				checkout scm
+			}
+		}
+		stage('Compile'){
+				sh 'cd /kernel/linux-smaug/'
 				sh './docker-init.sh'
 				sh './get-vendor.sh'
 				sh 'make -j$(nproc)'
 				sh './build-image.sh'
-			}
 		}
 	}
 }
