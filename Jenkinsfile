@@ -22,7 +22,7 @@ pipeline {
 				sh 'export CROSS_COMPILE=/toolchain/o/bin/aarch64-linux-android-'
 				sh './docker-init.sh'
 				sh './getvendor.sh -f'
-				sh 'yes "" | make dragon_denvit'
+				sh 'yes "" | make dragon_denvit_defconfig'
 				sh 'make -j$(nproc)'
 				sh './build-image.sh'
 			}
