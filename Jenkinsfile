@@ -2,7 +2,7 @@ pipeline {
 	agent {
 		docker {
 			image 'dvitali/android-build:feb-5-2'
-			args '-v $HOME/build:/kernel --entrypoint=zsh --privileged --rm'
+			args '-v $HOME/build:/kernel -it --entrypoint=zsh --privileged --rm'
 		}
 	}
 	stages {
