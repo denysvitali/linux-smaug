@@ -21,6 +21,7 @@ pipeline {
 				sh './docker-init.sh'
 				sh './getvendor.sh -f'
 				sh 'make dragon_denvit'
+				sh 'yes "" | make oldconfig'
 				sh 'make -j$(nproc)'
 				sh './build-image.sh'
 			}
