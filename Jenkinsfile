@@ -5,6 +5,9 @@ pipeline {
 			args '-v $HOME/build:/kernel --privileged'
 		}
 	}
+	options {
+    		skipDefaultCheckout(true)
+	}
 	stages {
 		stage('Pull') {
 			steps {
