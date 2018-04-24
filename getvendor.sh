@@ -2,7 +2,7 @@
 
 force=false
 
-if [ $1 = "-f" ]; then
+if [ "$1" -eq "-f" ]; then
 	force=true
 fi
 
