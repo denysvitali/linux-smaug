@@ -5,7 +5,7 @@ pipeline {
 			args '-v $HOME/build:/kernel --entrypoint=zsh --privileged --rm'
 		}
 	}
-	stage {
+	stages {
 		stage('Pull') {
 			steps {
 				sh 'cd /kernel'
