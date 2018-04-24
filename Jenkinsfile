@@ -13,11 +13,13 @@ pipeline {
 			}
 		}
 		stage('Compile'){
+			steps {
 				sh 'cd /kernel/linux-smaug/'
 				sh './docker-init.sh'
 				sh './get-vendor.sh'
 				sh 'make -j$(nproc)'
 				sh './build-image.sh'
+			}
 		}
 	}
 }
