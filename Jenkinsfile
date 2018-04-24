@@ -1,7 +1,7 @@
 pipeline {
 	agent {
 		docker {
-			image 'dvitali/android-build:feb-5-2'
+			image 'dvitali/android-build:feb-20'
 			args '-v $HOME/build:/kernel --privileged'
 		}
 	}
