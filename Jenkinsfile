@@ -12,9 +12,9 @@ pipeline {
 		stage('Pull') {
 			steps {
 				sh 'mkdir -p /kernel/linux-smaug && mkdir -p /kernel/kitchen/ && cd /kernel/linux-smaug'
-        dir('/kernel/linux-smaug') {
-				  checkout scm
-        }
+				checkout scm
+        sh 'ls -la'
+        sh 'pwd'
 			}
 		}
 		stage('Compile'){
