@@ -27,6 +27,11 @@ pipeline {
 				sh './build-image.sh'
 			}
 		}
+    stage('Archive Artifacts'){
+      steps {
+        archiveArtifacts 'build/linux-smaug/Image.fit,build/linux-smaug/kitchen/*.img'
+      }
+    }
 	}
 	post {
 		always {
