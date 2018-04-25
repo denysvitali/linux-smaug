@@ -19,17 +19,15 @@ pipeline {
 		}
 		stage('Compile'){
 			steps {
-        dir('/kernel/linux-smaug') {
-				  sh 'cd /kernel/linux-smaug/ && \
-          export ARCH=arm64 && \
-				  export CROSS_COMPILE=/toolchain/o/bin/aarch64-linux-android- && \
-				  ./docker-init.sh && \
-				  ./getvendor.sh -f && \
-				  yes "" | make dragon_denvit_defconfig && \
-          echo "Current dir: " $(pwd) && \
-				  make -j$(nproc) && \
-				  ./build-image.sh'
-        }
+				sh 'cd /kernel/linux-smaug/ && \
+        export ARCH=arm64 && \
+				export CROSS_COMPILE=/toolchain/o/bin/aarch64-linux-android- && \
+				./docker-init.sh && \
+				./getvendor.sh -f && \
+				yes "" | make dragon_denvit_defconfig && \
+        echo "Current dir: " $(pwd) && \
+				make -j$(nproc) && \
+				./build-image.sh'
 			}
 		}
     stage('Archive Artifacts'){
