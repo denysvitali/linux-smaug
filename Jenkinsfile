@@ -29,7 +29,9 @@ pipeline {
 		}
     stage('Archive Artifacts'){
       steps {
-        archiveArtifacts 'build/linux-smaug/Image.fit,build/linux-smaug/kitchen/*.img'
+        sh 'pwd'
+        sh 'ls -la /kernel'
+        archiveArtifacts 'Image.fit,/kernel/kitchen/*.img'
       }
     }
 	}
