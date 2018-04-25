@@ -27,4 +27,4 @@ deploy:
   file: "${RELEASE_PKG_FILES}"
   on:
     repo: denysvitali/linux-smaug
-    branch: all
+    all_branches: true
