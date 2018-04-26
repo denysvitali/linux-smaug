@@ -6,6 +6,8 @@ pipeline {
 	}
 	options {
     		skipDefaultCheckout(true)
+		timeout(time: 1, unit: 'HOURS')
+		retry(3)
 	}
 	stages {
 		stage('Pull') {
