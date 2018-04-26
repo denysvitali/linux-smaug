@@ -6,29 +6,27 @@ pipeline {
 	}
 	options {
     		skipDefaultCheckout(true)
-		timeout(time: 1, unit: 'HOURS')
-		retry(3)
+        timeout(time: 1, unit: 'HOURS')
+		    retry(3)
 	}
 	stages {
 		stage('Pull') {
 			steps {
 				sh 'mkdir -p /kernel/linux-smaug && mkdir -p /kernel/kitchen/ && cd /kernel/linux-smaug'
 				checkout scm
-        sh 'ls -la'
-        sh 'pwd'
 			}
 		}
 		stage('Compile'){
 			steps {
-				sh 'cd /kernel/linux-smaug/ && \
-        export ARCH=arm64 && \
-				export CROSS_COMPILE=/toolchain/o/bin/aarch64-linux-android- && \
-				./docker-init.sh && \
-				./getvendor.sh -f && \
-				yes "" | make dragon_denvit_defconfig && \
-        echo "Current dir: " $(pwd) && \
-				make -j$(nproc) && \
-				./build-image.sh'
+				sh 'cd /kernel/linux-smaug/'
+        sh 'export ARCH=arm64'
+				sh 'export CROSS_COMPILE=/toolchain/o/bin/aarch64-linux-android-'
+				sh './docker-init.sh'
+				sh './getvendor.sh -f'
+				sh 'yes "" | make dragon_denvit_defconfig'
+        sh 'echo "Current dir: " $(pwd)'
+				sh 'make -j$(nproc)'
+				sh './build-image.sh'
 			}
 		}
     stage('Archive Artifacts'){
