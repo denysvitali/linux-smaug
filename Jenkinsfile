@@ -2,18 +2,18 @@ pipeline {
 	agent {
 		docker {
 			image 'dvitali/android-build:feb-20'
+      label 'docker'
 		}
 	}
 	options {
-    		skipDefaultCheckout(true)
         timeout(time: 1, unit: 'HOURS')
 		    retry(3)
 	}
 	stages {
 		stage('Pull') {
 			steps {
-				sh 'mkdir -p /kernel/linux-smaug && mkdir -p /kernel/kitchen/ && cd /kernel/linux-smaug'
-				checkout scm
+				sh 'mkdir -p /kernel/linux-smaug && mkdir -p /kernel/kitchen/'
+        sh 'ln -s $HOME /kernel/linux-smaug/'
 			}
 		}
 		stage('Compile'){
