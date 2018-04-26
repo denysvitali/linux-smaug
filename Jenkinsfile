@@ -2,7 +2,7 @@ pipeline {
 	agent {
 		docker {
 			image 'dvitali/android-build:feb-20'
-			args '-v $HOME/build:/kernel --privileged --entrypoint=""'
+			args '-v $HOME/build:/kernel -v /var/jenkins_home/workspace/:/var/jenkins_home/workspace/ --privileged --entrypoint=""'
 		}
 	}
 	options {
