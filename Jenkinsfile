@@ -1,5 +1,4 @@
 node {
-  docker.withServer() {
   docker.image("dvitali/build-container:latest").inside() {
     try {
   	  stage('Pull') {
@@ -29,6 +28,5 @@ node {
     } finally {
   			cleanWs()
   	}
-  }
   }
 }
