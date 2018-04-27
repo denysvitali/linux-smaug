@@ -12,6 +12,7 @@ pipeline {
     ARCH = 'arm64'
     CROSS_COMPILE = '/toolchain/o/bin/aarch64-linux-android-'
   }
+  dockerNode {
 	stages {
 		stage('Pull') {
 			steps {
@@ -46,4 +47,5 @@ pipeline {
 			cleanWs()
 		}
 	}
+  }
 }
