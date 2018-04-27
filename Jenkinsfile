@@ -2,10 +2,7 @@ node {
   docker.image("dvitali/build-container:latest").inside() {
     try {
   	  stage('Pull') {
-          checkout([$class: 'GitSCM',
-            extensions: [[$class: 'CloneOption', timeout: 120]], gitTool: 'Default', 
-            userRemoteConfigs: [[credentialsId: key, url: repo]]
-          ])
+          checkout scm
   	  		sh 'mkdir -p /kernel/linux-smaug && mkdir -p /kernel/kitchen/'
           sh 'ln -s $HOME /kernel/linux-smaug/'
   	  }
