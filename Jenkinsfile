@@ -1,6 +1,7 @@
 dockerNode(image: "dvitali/build-container:latest") {
   try {
 	  stage('Pull') {
+        checkout scm
 	  		sh 'mkdir -p /kernel/linux-smaug && mkdir -p /kernel/kitchen/'
         sh 'ln -s $HOME /kernel/linux-smaug/'
 	  }
