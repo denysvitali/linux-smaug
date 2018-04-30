@@ -18,8 +18,9 @@
 
 	aliases {
 		serial0 = &uarta;
-		serial1 = &uartc;
-		serial2 = &uartd;
+		serial1 = &uartb;
+		serial2 = &uartc;
+		serial3 = &uartd;
 	};
 
 	chosen {
@@ -1918,7 +1919,7 @@
 	};
 
 	wifi: wifi_bcm4354 {
-		compatible = "brcm,bcm4354";
+		compatible = "bcm,bcm4354";
 		interrupt-parent = <&gpio>;
 		interrupts = <TEGRA_GPIO(H, 2) IRQ_TYPE_LEVEL_HIGH>;
 		wl_reg_on = <&gpio TEGRA_GPIO(H, 1) GPIO_ACTIVE_HIGH>;
@@ -1927,12 +1928,13 @@
 			PMC_WAKE_TYPE_EVENT 8 PMC_TRIGGER_TYPE_HIGH>;
 	};
 	bluetooth: bt_bcm4354 {
-		compatible = "brcm,bt-bcm4354";
+		compatible = "bcm,bt-bcm4354";
 		bt_reg_on-gpios = <&gpio TEGRA_GPIO(H, 4) GPIO_ACTIVE_LOW>;
 		bt_host_wake-gpios = <&gpio TEGRA_GPIO(H, 5) GPIO_ACTIVE_HIGH>;
 		bt_ext_wake-gpios = <&gpio TEGRA_GPIO(H, 3) GPIO_ACTIVE_LOW>;
 		nvidia,pmc-wakeup = <&pmc
 				PMC_WAKE_TYPE_EVENT 52 PMC_TRIGGER_TYPE_HIGH>;
+		
 	};
 
 	gpio-keys {
@@ -2104,4 +2106,37 @@
 			};
 		};
 	};
+};
+
+&sdmmc2 {
+	power-gpios = <&gpio TEGRA_GPIO(H, 1) GPIO_ACTIVE_HIGH>;
+	bus-width = <4>;
+	keep-power-in-suspend;
+	non-removable;
+	nvidia,pu-1v8-offset = <0x05>;
+	nvidia,pd-1v8-offset = <0x05>;
+	nvidia,trim-delay = <8>;
+	nvidia,tap-delay = <0>;
+	status = "okay";
+};
+&sdmmc4 {
+	bus-width = <8>;
+	non-removable;
+	vmmc-supply = <&pp3300>;
+	nvidia,pu-1v8-offset = <0x05>;
+	nvidia,pd-1v8-offset = <0x05>;
+	nvidia,trim-delay = <8>;
+	nvidia,tap-delay = <0>;
+	status = "okay";
+};
+&uarta {
+	status = "okay";
+};
+&uartc {
+	compatible = "nvidia,tegra210-hsuart", "nvidia,tegra30-hsuart";
+	status = "okay";
+};
+&uartd {
+	compatible = "nvidia,tegra124-hsuart", "nvidia,tegra30-hsuart";
+	status = "okay";
 };

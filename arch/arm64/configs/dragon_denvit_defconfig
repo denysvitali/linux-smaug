@@ -1128,7 +1128,7 @@ CONFIG_STANDALONE=y
 CONFIG_PREVENT_FIRMWARE_BUILD=y
 CONFIG_FW_LOADER=y
 CONFIG_FIRMWARE_IN_KERNEL=y
-CONFIG_EXTRA_FIRMWARE="fw_bcmdhd.bin fw_bcmdhd_apsta.bin bcm4350c0.hcd nouveau/acr_ucode.bin nouveau/fecs.bin nouveau/fecs_sig.bin nouveau/gpmu_ucode_desc.bin nouveau/gpmu_ucode_image.bin nouveau/nv12b_bundle nouveau/nv12b_fuc409c nouveau/nv12b_fuc409d nouveau/nv12b_fuc41ac nouveau/nv12b_fuc41ad nouveau/nv12b_method nouveau/nv12b_sw_ctx nouveau/nv12b_sw_nonctx nouveau/pmu_bl.bin nouveau/pmu_sig.bin nvidia/tegra210/bpmp.bin nvidia/tegra210/nvdec_bl_prod.bin nvidia/tegra210/nvdec_ns.bin nvidia/tegra210/nvdec_prod.bin nvidia/tegra210/xusb.bin nvidia/tegra210/vic04_ucode.bin"
+CONFIG_EXTRA_FIRMWARE="fw_bcmdhd.bin fw_bcmdhd_apsta.bin bcm4354.hcd tegra21x/acr_ucode.bin tegra21x/nvhost_nvdec_bl020_prod.fw tegra21x/nvhost_nvdec020_prod.fw tegra21x/nvhost_nvjpg010.fw tegra21x/nvhost_nvdec020_ns.fw tegra21x/gpmu_ucode_desc.bin tegra21x/nvhost_nvenc050.fw tegra21x/nvhost_nvdec020.fw tegra21x/gpu2cde.bin tegra21x/nvhost_tsec.fw tegra21x/vic04_ucode.bin tegra21x/gpmu_ucode_image.bin tegra21x/gpmu_ucode.bin tegra21x/NETB_img.bin tegra21x/pmu_sig.bin tegra21x/fecs.bin tegra21x/fecs_sig.bin tegra21x/gpccs.bin tegra21x/pmu_bl.bin"
 CONFIG_EXTRA_FIRMWARE_DIR="firmware"
 # CONFIG_FW_LOADER_USER_HELPER_FALLBACK is not set
 CONFIG_ALLOW_DEV_COREDUMP=y

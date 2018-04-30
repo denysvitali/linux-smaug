@@ -11,6 +11,13 @@
 	interrupt-parent = <&lic>;
 	#address-cells = <2>;
 	#size-cells = <2>;
+	
+	aliases {
+		serial0 = &uarta;
+		serial1 = &uartb;
+		serial2 = &uartc;
+		serial3 = &uartd;
+	};
 
 	pcie@1003000 {
 		compatible = "nvidia,tegra210-pcie";
@@ -406,6 +413,12 @@
 		reg = <0x0 0x60007000 0x0 0x1000>;
 	};
 
+	adsp_audio {
+		compatible = "nvidia,tegra210-adsp-audio";
+		iommus = <&mc TEGRA_SWGROUP_APE>;
+		status = "disabled";
+	};
+
 	gpio: gpio@6000d000 {
 		compatible = "nvidia,tegra210-gpio", "nvidia,tegra30-gpio";
 		reg = <0x0 0x6000d000 0x0 0x1000>;
@@ -542,13 +555,9 @@
 	};
 
 	pwm: pwm@7000a000 {
-		compatible = "nvidia,tegra210-pwm", "nvidia,tegra20-pwm";
+		compatible = "nvidia,tegra124-pwm";
 		reg = <0x0 0x7000a000 0x0 0x100>;
 		#pwm-cells = <2>;
-		clocks = <&tegra_car TEGRA210_CLK_PWM>;
-		clock-names = "pwm";
-		resets = <&tegra_car 17>;
-		reset-names = "pwm";
 		status = "disabled";
 	};
 
@@ -648,8 +657,8 @@
 		status = "disabled";
 	};
 
-	spi@7000d400 {
-		compatible = "nvidia,tegra210-spi", "nvidia,tegra114-spi";
+	spi1: spi@7000d400 {
+		compatible = "nvidia,tegra210-spi";
 		reg = <0x0 0x7000d400 0x0 0x200>;
 		interrupts = <GIC_SPI 59 IRQ_TYPE_LEVEL_HIGH>;
 		#address-cells = <1>;
@@ -662,9 +671,8 @@
 		dma-names = "rx", "tx";
 		status = "disabled";
 	};
-
-	spi@7000d600 {
-		compatible = "nvidia,tegra210-spi", "nvidia,tegra114-spi";
+	spi2: spi@7000d600 {
+		compatible = "nvidia,tegra210-spi";
 		reg = <0x0 0x7000d600 0x0 0x200>;
 		interrupts = <GIC_SPI 82 IRQ_TYPE_LEVEL_HIGH>;
 		#address-cells = <1>;
@@ -678,8 +686,8 @@
 		status = "disabled";
 	};
 
-	spi@7000d800 {
-		compatible = "nvidia,tegra210-spi", "nvidia,tegra114-spi";
+	spi3: spi@7000d800 {
+		compatible = "nvidia,tegra210-spi";
 		reg = <0x0 0x7000d800 0x0 0x200>;
 		interrupts = <GIC_SPI 83 IRQ_TYPE_LEVEL_HIGH>;
 		#address-cells = <1>;
@@ -692,9 +700,8 @@
 		dma-names = "rx", "tx";
 		status = "disabled";
 	};
-
-	spi@7000da00 {
-		compatible = "nvidia,tegra210-spi", "nvidia,tegra114-spi";
+	spi4: spi@7000da00 {
+		compatible = "nvidia,tegra210-spi";
 		reg = <0x0 0x7000da00 0x0 0x200>;
 		interrupts = <GIC_SPI 93 IRQ_TYPE_LEVEL_HIGH>;
 		#address-cells = <1>;
@@ -707,6 +714,21 @@
 		dma-names = "rx", "tx";
 		status = "disabled";
 	};
+	/*qspi6: spi@70410000 {
+		compatible = "nvidia,tegra210-qspi";
+		reg = <0x0 0x70410000 0x0 0x1000>;
+		interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		clocks = <&tegra_car TEGRA210_CLK_QSPI>;
+		clock-names = "qspi";
+		resets = <&tegra_car 211>;
+		reset-names = "qspi";
+		dmas = <&apbdma 5>, <&apbdma 5>;
+		dma-names = "rx", "tx";
+		status = "disabled";
+	};*/
+
 
 	rtc@7000e000 {
 		compatible = "nvidia,tegra210-rtc", "nvidia,tegra20-rtc";
@@ -1019,7 +1041,7 @@
 		};
 	};
 
-	sdhci@700b0600 {
+	sdmmc4: sdhci@700b0600 {
 		compatible = "nvidia,tegra210-sdhci", "nvidia,tegra124-sdhci";
 		reg = <0x0 0x700b0600 0x0 0x200>;
 		interrupts = <GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;
@@ -1030,7 +1052,7 @@
 		status = "disabled";
 	};
 
-	sdhci@700b0000 {
+	sdmmc1: sdhci@700b0000 {
 		compatible = "nvidia,tegra210-sdhci", "nvidia,tegra124-sdhci";
 		reg = <0x0 0x700b0000 0x0 0x200>;
 		interrupts = <GIC_SPI 14 IRQ_TYPE_LEVEL_HIGH>;
@@ -1041,7 +1063,7 @@
 		status = "disabled";
 	};
 
-	sdhci@700b0200 {
+	sdmmc2: sdhci@700b0200 {
 		compatible = "nvidia,tegra210-sdhci", "nvidia,tegra124-sdhci";
 		reg = <0x0 0x700b0200 0x0 0x200>;
 		interrupts = <GIC_SPI 15 IRQ_TYPE_LEVEL_HIGH>;
