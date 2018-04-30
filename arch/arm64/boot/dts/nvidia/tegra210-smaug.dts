@@ -512,6 +512,53 @@
 				nvidia,enable-input = <TEGRA_PIN_ENABLE>;
 				nvidia,open-drain = <TEGRA_PIN_DISABLE>;
 			};
+
+		      	// Bluetooth
+			/*
+			bt_rst {
+				nvidia,pins = "bt_rst_ph4";
+				nvidia,function = "rsvd0";
+				nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+				nvidia,tristate = <TEGRA_PIN_DISABLE>;
+				nvidia,enable-input = <TEGRA_PIN_DISABLE>;
+				nvidia,open-drain = <TEGRA_PIN_DISABLE>;
+			};
+			bt_wake {
+				nvidia,pins = "ap_wake_bt_ph3";
+				nvidia,function = "rsvd0";
+				nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+				nvidia,tristate = <TEGRA_PIN_DISABLE>;
+				nvidia,enable-input = <TEGRA_PIN_DISABLE>;
+				nvidia,open-drain = <TEGRA_PIN_DISABLE>;
+			};
+			bt_uart_tx {
+				nvidia,pins = "uart4_tx_pi4", "uart4_rts_pi6";
+				nvidia,function = "uartd";
+				nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+				nvidia,tristate = <TEGRA_PIN_DISABLE>;
+				nvidia,enable-input = <TEGRA_PIN_DISABLE>;
+				nvidia,open-drain = <TEGRA_PIN_DISABLE>;
+			};
+			bt_uart_rx {
+				nvidia,pins = "uart4_rx_pi5", "uart4_cts_pi7";
+				nvidia,function = "uartd";
+				nvidia,pull = <TEGRA_PIN_PULL_DOWN>;
+				nvidia,tristate = <TEGRA_PIN_ENABLE>;
+				nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+				nvidia,open-drain = <TEGRA_PIN_DISABLE>;
+      			};
+
+     			 in_none {
+     	   			// p5,p4,p3,p2,s1,h5,x5,y1,e6,h6,k2
+     	   			nvidia,pins = "bt_wake_ap_ph5";
+     	   			nvidia,function = "rsvd3";
+     	   			nvidia,pull = <TEGRA_PIN_PULL_NONE>;
+     	   			nvidia,tristate = <TEGRA_PIN_ENABLE>;
+     	   			nvidia,enable-input = <TEGRA_PIN_ENABLE>;
+     	   			nvidia,open-drain = <TEGRA_PIN_DISABLE>;
+     			 };
+			*/
+
 			ph6 {
 				nvidia,pins = "ph6";
 				nvidia,pull = <TEGRA_PIN_PULL_NONE>;
@@ -558,7 +605,7 @@
 				nvidia,enable-input = <TEGRA_PIN_DISABLE>;
 				nvidia,open-drain = <TEGRA_PIN_DISABLE>;
 			};
-			uart4_tx_pi4 {
+			/*uart4_tx_pi4 {
 				nvidia,pins = "uart4_tx_pi4";
 				nvidia,function = "uartd";
 				nvidia,pull = <TEGRA_PIN_PULL_NONE>;
@@ -589,7 +636,7 @@
 				nvidia,tristate = <TEGRA_PIN_DISABLE>;
 				nvidia,enable-input = <TEGRA_PIN_ENABLE>;
 				nvidia,open-drain = <TEGRA_PIN_DISABLE>;
-			};
+			};*/
 			gen1_i2c_sda_pj0 {
 				nvidia,pins = "gen1_i2c_sda_pj0";
 				nvidia,function = "i2c1";
@@ -2152,4 +2199,10 @@
 &uartd {
 	compatible = "nvidia,tegra124-hsuart", "nvidia,tegra30-hsuart";
 	status = "okay";
+  
+  	//bluetooth {
+	//	compatible = "brcm,bcm43438-bt";
+	//	shutdown-gpios = <&gpio TEGRA_GPIO(H, 4) GPIO_ACTIVE_HIGH>;
+	//	device-wakeup-gpios = <&gpio TEGRA_GPIO(H, 3) GPIO_ACTIVE_LOW>;
+	//};
 };
