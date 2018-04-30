@@ -112,9 +112,23 @@
 		status = "okay";
 	};
 
-	serial@70006300 {
+	/*serial@70006300 {
 		compatible = "nvidia,tegra124-hsuart", "nvidia,tegra30-hsuart";
 		status = "okay";
+	};*/
+
+	serial@70006300 {
+		status = "okay";
+		// starts @ 115200, switches to 3000000
+		// flow control, 1 stop bit
+		compatible = "nvidia,tegra124-hsuart", "nvidia,tegra30-hsuart";
+
+		bluetooth {
+			compatible = "brcm,bcm43438-bt";
+			shutdown-gpios = <&gpio TEGRA_GPIO(H, 4) GPIO_ACTIVE_HIGH>;
+			// level correct?
+			device-wakeup-gpios = <&gpio TEGRA_GPIO(H, 3) GPIO_ACTIVE_LOW>;
+		};
 	};
 
 	pinmux: pinmux@700008d4 {
@@ -1928,13 +1942,12 @@
 			PMC_WAKE_TYPE_EVENT 8 PMC_TRIGGER_TYPE_HIGH>;
 	};
 	bluetooth: bt_bcm4354 {
-		compatible = "bcm,bt-bcm4354";
+		compatible = "brcm,bt-bcm4354";
 		bt_reg_on-gpios = <&gpio TEGRA_GPIO(H, 4) GPIO_ACTIVE_LOW>;
 		bt_host_wake-gpios = <&gpio TEGRA_GPIO(H, 5) GPIO_ACTIVE_HIGH>;
 		bt_ext_wake-gpios = <&gpio TEGRA_GPIO(H, 3) GPIO_ACTIVE_LOW>;
 		nvidia,pmc-wakeup = <&pmc
 				PMC_WAKE_TYPE_EVENT 52 PMC_TRIGGER_TYPE_HIGH>;
-		
 	};
 
 	gpio-keys {
