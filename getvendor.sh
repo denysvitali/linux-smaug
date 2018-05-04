@@ -18,55 +18,17 @@ function warn(){
 	echo -en "\e[21m\e[39m"
 }
 
-function download_vendor_files(){
-	vendor_name=$1
-	extract_name=$2
-	vendor_url=$3
-	extract_file=extract-$extract_name-dragon.sh
+tmpdir=$(mktemp -d)
+tx1file="tx1-driver.tbz2"
+tx1_path="$tmpdir/$tx1file"
+tx1_ext_path="$tmpdir/tx1-ext"
+tx1_drivers_path="$tmpdir/tx1-drivers"
 
-	log "Getting $vendor_name files..."
-	basedir="/tmp/vendor/${vendor_name,,}"
-	extract_file_path="${basedir}/$extract_file"
-	download_path="$basedir/${vendor_name,,}-dragon.tgz"
-	log "Download path: $download_path"
-	log "Vendor URL: $vendor_url"
-	rm -rf $basedir
-	mkdir -p $basedir
-	wget "$vendor_url" -O $download_path
-	tar -C $basedir -xvf $download_path
-	log "$vendor_name script extracted at $basedir"
-	mkdir -p $basedir/extracted
-	tailcmd=$(grep -oP --text "^tail -n \+\d+" $extract_file_path)
-	$tailcmd $extract_file_path | tar -zxv -C $basedir/extracted
-	log "$vendor_name files extracted at $basedir/extracted"
-}
+mkdir $tx1_ext_path
+mkdir $tx1_drivers_path
 
-if [ -d "/tmp/vendor/google/" ] && [ "$force" != true ]
-then
-	warn "Google vendor files exist in /tmp/vendor/google/, won't download them again (use -f to force)"
-else
-	download_vendor_files 'Google' 'google_devices' 'https://dl.google.com/dl/android/aosp/google_devices-dragon-opr1.170623.027-dd1b444b.tgz'
-fi
-
-if [ -d "/tmp/vendor/nvidia/" ] && [ "$force" != true ]
-then
-	warn "Nvidia vendor files exist in /tmp/vendor/nvidia/, won't download them again (use -f to force)"
-else
-	download_vendor_files 'Nvidia' 'nvidia' 'https://dl.google.com/dl/android/aosp/nvidia-dragon-opr1.170623.027-3f71473f.tgz'
-fi
-
-# /tmp/vendor/nvidia/extracted/vendor/nvidia/dragon/proprietary/ => firmware/nvidia/tegra210/
-# /tmp/vendor/google/extracted/vendor/google_devices/dragon/proprietary/vendor.img => 
-
-# Google
-simg2img /tmp/vendor/google/extracted/vendor/google_devices/dragon/proprietary/vendor.img /tmp/vendor/google/extracted/vendor/google_devices/dragon/proprietary/vendor-img.img
-mkdir /tmp/vendor/google/mount
-mount /tmp/vendor/google/extracted/vendor/google_devices/dragon/proprietary/vendor-img.img /tmp/vendor/google/mount
-tree /tmp/vendor/google/mount
-cp -Rv /tmp/vendor/google/mount/firmware/* firmware/
-umount /tmp/vendor/google/mount
-# Nvidia
-cp -Rv /tmp/vendor/nvidia/extracted/vendor/nvidia/dragon/proprietary/* firmware/nvidia/tegra210/
-
-# Broadcom
-wget 'https://android.googlesource.com/platform/hardware/broadcom/wlan/+/android-o-mr1-preview-2/bcmdhd/firmware/bcm4354/fw_bcm4354.bin?format=TEXT' -O firmware/fw_bcmdhd.bin.b64 && cat firmware/fw_bcmdhd.bin.b64 | base64 -d > firmware/fw_bcmdhd.bin
+wget -O $tx1_path https://developer.nvidia.com/embedded/dlc/tx1-driver-package-r2422
+bzip2 -dc $tmpdir/$tx1file | tar -C $tx1_ext_path -xvf -
+bzip2 -dc $tx1_ext_path/Linux_for_Tegra/nv_tegra/nvidia_drivers.tbz2 | tar -C $tx1_drivers_path -xvf -
+cp -R $tx1_drivers_path/lib/firmware .
+rm -rf $tmpdir
