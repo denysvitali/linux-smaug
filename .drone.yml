@@ -1,5 +1,5 @@
 workspace:
-  base: /kernel
+  base: /build/kernel
   path: /linux-smaug
 pipeline:
   build:
@@ -14,10 +14,10 @@ pipeline:
       - "mkdir /build/kernel/linux-smaug"
       - "ln -s $PWD /build/kernel/linux-smaug"
       - "ls -la /build/kernel/"
-      - "cd /kernel/ramdisk/"
+      - "cd /build/kernel/ramdisk/"
       - "./build.sh"
-      - "ls -la /kernel/ramdisk/"
-      - "cd /kernel/linux-smaug/"
+      - "ls -la /build/kernel/ramdisk/"
+      - "cd /build/kernel/linux-smaug/"
       - "make dragon_denvit_defconfig"
       - "bash getvendor.sh -f"
       - "make -j8"
@@ -25,4 +25,4 @@ pipeline:
   github_release:
     image: plugins/github-release
     secrets: [ github_token ]
-    files: /kernel/kitchen/*
+    files: /build/kernel/kitchen/*
