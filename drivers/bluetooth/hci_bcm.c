@@ -267,6 +267,11 @@ static int bcm_gpio_set_power(struct bcm_device *dev, bool powered)
 
 	dev->res_enabled = powered;
 
+	if (powered) {
+		/* Don't rely on CTS and wait until chip came up */
+		msleep(15);
+	}
+
 	return 0;
 
 err_revert_shutdown:
@@ -1421,6 +1426,7 @@ static const struct of_device_id bcm_bluetooth_of_match[] = {
 	{ .compatible = "brcm,bcm20702a1" },
 	{ .compatible = "brcm,bcm4330-bt" },
 	{ .compatible = "brcm,bcm43438-bt" },
+	{ .compatible = "brcm,bcm4354-bt" },
 	{ },
 };
 MODULE_DEVICE_TABLE(of, bcm_bluetooth_of_match);
