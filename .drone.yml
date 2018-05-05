@@ -1,3 +1,6 @@
+workspace:
+  base: /kernel
+  path: /linux-smaug
 pipeline:
   build:
     image: dvitali/android-build:feb-20
