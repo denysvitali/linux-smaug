@@ -17,7 +17,7 @@ script:
 before_deploy:
   - sudo chown -R $UID:$UID /build/kernel/
   - ls -la /build/kernel/{kitchen,ramdisk}
-  - export RELEASE_PKG_FILES=$(ls /build/kernel/kitchen/*.img)
+  - export RELEASE_PKG_FILES=$(ls /build/kernel/kitchen/*.img && ls /build/kernel/linux-smaug/Image.fit)
   - "echo Releasing: $RELEASE_PKG_FILES"
 deploy:
   provider: releases
