@@ -15,6 +15,7 @@ pipeline:
       - "cd /build/kernel/ramdisk/"
       - "./build.sh"
       - "ls -la /build/kernel/ramdisk/"
+      - "ln -s /build/kernel/ /kernel/"
       - "cd /build/kernel/linux-smaug/"
       - "make dragon_denvit_defconfig"
       - "bash getvendor.sh -f"
