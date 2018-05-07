@@ -13,7 +13,6 @@ pipeline:
       - "git clone https://github.com/denysvitali/smaug-custom-initram /build/kernel/smaug-custom-initram"
       - "ls -la /build/kernel/"
       - "cd /build/kernel/ramdisk/"
-      - "mkdir /kernel"
       - "mount -o bind /build/kernel/ /kernel"
       - "ls -la /kernel"
       - "ls -la /kernel/ramdisk/"
