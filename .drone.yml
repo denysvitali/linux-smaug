@@ -26,5 +26,5 @@ pipeline:
     image: plugins/github-release
     secrets: [ github_token ]
     files: /kernel/kitchen/*
-    when
+    when:
       event: tag
