@@ -2006,7 +2006,7 @@
 		power {
 			label = "Power";
 			gpios = <&gpio TEGRA_GPIO(X, 5) GPIO_ACTIVE_LOW>;
-			linux,code = <KEY_POWER>;
+			linux,code = <KEY_SLEEP>;
 			debounce-interval = <30>;
 			wakeup-source;
 		};
